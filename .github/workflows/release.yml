@@ -7,11 +7,12 @@ on:
   push:
     tags:
       - '*'
-
 jobs:
   build-release:
     name: Build Release
     runs-on: windows-2022
+    permissions:
+      contents: write
 
     steps:
     - name: Print installed Windows SDK versions
