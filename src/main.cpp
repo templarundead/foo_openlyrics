@@ -33,10 +33,12 @@ void OpenLyricsVersion::get_about_message(pfc::string_base & out)
     "- Add support for showing already-passed lyric lines in a different colour\n"
     "- Add a source for metal-archives.com\n"
     "- Stop asking users to submit metrics after a pre-defined date\n"
+    "- Remove support for horizontal scrolling\n"
     "- Fix retrieval failing from some sources when no 'album' tag is present\n"
     "- Fix crash when deleting lyrics from tags via the playlist context menu\n"
     "- Fix LRC offset tags being ignored if they contained a space\n"
     "- Fix a potential crash when opening preferences, caused by corrupt config\n"
+    "- Avoid sometimes creating difficult-to-delete folders when saving to file\n"
     "\n";
     out += "Version 1.6 (2023-04-13):\n"
     "- Fix crash on startup when running on fb2k v2, beta 31 or earlier\n"
