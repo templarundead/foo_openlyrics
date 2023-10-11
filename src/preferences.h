@@ -160,5 +160,6 @@ namespace preferences
         double image_opacity();
         int blur_radius();
         std::string custom_image_path();
+        bool external_window_opaque();
     }
 }

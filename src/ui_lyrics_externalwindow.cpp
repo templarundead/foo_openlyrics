@@ -32,6 +32,8 @@ static cfg_int_t<int> cfg_external_window_previous_y(GUID_EXTERNAL_WINDOW_PREVIO
 static cfg_int_t<int> cfg_external_window_previous_size_x(GUID_EXTERNAL_WINDOW_PREVIOUS_SIZE_X, 0);
 static cfg_int_t<int> cfg_external_window_previous_size_y(GUID_EXTERNAL_WINDOW_PREVIOUS_SIZE_Y, 0);
 
+const float CLOSE_BTN_RADIUS = 32.0f;
+
 struct D2DTextRenderContext
 {
     ID2D1DeviceContext* device;
@@ -50,13 +52,23 @@ class ExternalLyricWindow : public LyricPanel
 {
 public:
     ExternalLyricWindow();
+    ~ExternalLyricWindow() override;
     void SetUp();
-    void SetUpDX();
+    void SetUpDX(bool force);
 
     LRESULT OnWindowCreate(LPCREATESTRUCT) override;
     void OnWindowDestroy() override;
     void OnWindowMove(CPoint new_origin) override;
     void OnWindowResize(UINT request_type, CSize new_size) override;
+    UINT OnNonClientHitTest(CPoint point) override;
+    LRESULT OnNonClientCalcSize(BOOL calc_valid_rects, LPARAM lparam) override;
+    void OnMouseMove(UINT virtual_keys, CPoint mouse_pos) override;
+    void OnMouseLeave() override;
+    void OnLMBDown(UINT virtual_keys, CPoint point) override;
+    void OnLMBUp(UINT virtual_keys, CPoint point) override;
+
+    void OnNonClientMouseMove(UINT virtual_keys, CPoint point) override;
+    void OnNonClientMouseLeave() override;
 
     void OnPaint(CDCHandle) override;
 
@@ -68,6 +80,8 @@ private:
     void DrawUntimedLyrics(LyricData& lyrics, D2DTextRenderContext& render);
     void DrawTimestampedLyrics(D2DTextRenderContext& render);
 
+    HMODULE m_direct_composition = nullptr;
+
     Microsoft::WRL::ComPtr<IDXGISwapChain1> m_swap_chain = nullptr;
     Microsoft::WRL::ComPtr<ID3D11Device> m_d3d_device = nullptr;
     Microsoft::WRL::ComPtr<ID2D1Device> m_d2d_device = nullptr;
@@ -78,6 +92,10 @@ private:
     Microsoft::WRL::ComPtr<IDCompositionVisual> m_dcomp_visual = nullptr;
 
     Microsoft::WRL::ComPtr<ID2D1Bitmap> m_d2d_albumart_bitmap = nullptr;
+
+    bool m_mouse_hover = false;
+    bool m_nc_mouse_hover = false;
+    CPoint m_last_mouse_pos = {};
 };
 
 static ExternalLyricWindow* g_external_window = nullptr;
@@ -87,13 +105,32 @@ ExternalLyricWindow::ExternalLyricWindow()
     : LyricPanel()
 {
     metrics::log_used_external_window();
+
+    // NOTE: We manually load this because it's only available from Windows 8 onwards
+    //       and fb2k supports Windows 7. It's only required for the transparent window
+    //       background, and we'd rather not make all of openlyrics unavailable to the
+    //       few remaining Win7 users just for that. So we load it dynamically at
+    //       runtime and just don't support transparent backgrounds on Win7.
+    //       If we later drop support for Win7, we can remove all of this and link
+    //       to DirectComposition at compile time.
+    m_direct_composition = LoadLibrary(_T("Dcomp.dll"));
 }
+
+ExternalLyricWindow::~ExternalLyricWindow()
+{
+    if(m_direct_composition != nullptr)
+    {
+        FreeLibrary(m_direct_composition);
+        m_direct_composition = nullptr;
+    }
+}
+
 void ExternalLyricWindow::SetUp()
 {
     const HWND parent = nullptr;
     const TCHAR* window_name = _T("OpenLyrics external window");
-    const DWORD style = WS_OVERLAPPEDWINDOW;
-    const DWORD ex_style = WS_EX_NOREDIRECTIONBITMAP;
+    const DWORD style = WS_POPUP;
+    const DWORD ex_style = (m_direct_composition == nullptr) ? 0 : WS_EX_NOREDIRECTIONBITMAP;
 
     // NOTE: We specifically need to exclude the WS_VISIBLE style (which causes the window
     //       to be created already-visible) because including it results in ColumnsUI
@@ -102,7 +139,12 @@ void ExternalLyricWindow::SetUp()
     //       visible after creation, fb2k does this for us already.
     //       See: https://github.com/jacquesh/foo_openlyrics/issues/132
 
-    WIN32_OP(Create(parent, nullptr, window_name, style, ex_style) != NULL)
+    RECT window_rect = {};
+    window_rect.left = cfg_external_window_previous_x.get_value();
+    window_rect.top = cfg_external_window_previous_y.get_value();
+    window_rect.right = window_rect.left + cfg_external_window_previous_size_x.get_value();
+    window_rect.bottom = window_rect.top + cfg_external_window_previous_size_y.get_value();
+    WIN32_OP(Create(parent, &window_rect, window_name, style, ex_style) != NULL)
 
     // NOTE: We need to do this separately because the rect passed to CreateWindow appears
     //       to include the non-client area, whereas all our other measurements are
@@ -110,13 +152,7 @@ void ExternalLyricWindow::SetUp()
     //       CreateWindow then it would create a window that is slightly smaller than we
     //       intended, and that size would be saved so the next window would again be
     //       slightly smaller etc until we have just a thin line for our window.
-    BOOL success = SetWindowPos(
-            HWND_TOPMOST,
-            cfg_external_window_previous_x.get_value(),
-            cfg_external_window_previous_y.get_value(),
-            cfg_external_window_previous_size_x.get_value(),
-            cfg_external_window_previous_size_y.get_value(),
-            SWP_NOMOVE | SWP_NOSIZE);
+    BOOL success = SetWindowPos(HWND_TOPMOST, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE);
     if(!success)
     {
         const auto GetLastErrorString = []() -> const char*
@@ -126,7 +162,7 @@ void ExternalLyricWindow::SetUp()
             FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, error, 0, errorMsgBuffer, sizeof(errorMsgBuffer), nullptr);
             return errorMsgBuffer;
         };
-        LOG_WARN("Failed to set window to always-on-top: %d/%s", GetLastError(), GetLastErrorString());
+        LOG_WARN("Failed to set window to always-on-top: 0x%x/%s", GetLastError(), GetLastErrorString());
     }
     ShowWindow(SW_SHOW);
 
@@ -136,8 +172,26 @@ void ExternalLyricWindow::SetUp()
     // TODO: Load existing lyrics!
 }
 
-void ExternalLyricWindow::SetUpDX()
+void ExternalLyricWindow::SetUpDX(bool force)
 {
+    TIME_FUNCTION();
+
+    CRect rect = {};
+    GetClientRect(&rect);
+    if(m_d2d_bitmap != nullptr)
+    {
+        const D2D1_SIZE_U current_size = m_d2d_bitmap->GetPixelSize();
+        const bool size_changed = (m_d2d_bitmap == nullptr)
+            || (current_size.width != UINT(rect.Width()))
+            || (current_size.height != UINT(rect.Height()));
+        const bool is_empty = ((rect.Width() == 0) || (rect.Height() == 0));
+        if(!force && (!size_changed || is_empty))
+        {
+            LOG_INFO("DirectX target size has not changed and setup was not forced, skipping setup...");
+            return;
+        }
+    }
+
     m_swap_chain.Reset();
     m_d3d_device.Reset();
     m_d2d_device.Reset();
@@ -150,7 +204,7 @@ void ExternalLyricWindow::SetUpDX()
     // Approach to pixel-perfect window transparency adapted from: https://learn.microsoft.com/en-us/archive/msdn-magazine/2014/june/windows-with-c-high-performance-window-layering-using-the-windows-composition-engine
     const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_0};
     UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-#ifndef _NDEBUG
+#ifndef NDEBUG
     flags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
 
@@ -169,12 +223,12 @@ void ExternalLyricWindow::SetUpDX()
                                            nullptr);
         if((result == S_OK) && (m_d3d_device.Get() != nullptr))
         {
-            LOG_INFO("Successfully created D3D device using driver type %d", int(driver_type));
+            LOG_INFO("Successfully created D3D device using driver type 0x%x", int(driver_type));
             break;
         }
         else
         {
-            LOG_WARN("Failed to create D3D device using driver type %d: %u", int(driver_type), uint32_t(result));
+            LOG_WARN("Failed to create D3D device using driver type 0x%x: 0x%x", int(driver_type), uint32_t(result));
         }
     }
     if(m_d3d_device == nullptr)
@@ -201,18 +255,13 @@ void ExternalLyricWindow::SetUpDX()
             return;
         }
 
-        RECT rect = {};
-        GetClientRect(&rect);
-
         DXGI_SWAP_CHAIN_DESC1 description = {};
         description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
         description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
         description.BufferCount = 2;
         description.SampleDesc.Count = 1;
-        description.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
-        description.Width  = UINT(rect.right - rect.left);
-        description.Height = UINT(rect.bottom - rect.top);
+        description.Width  = UINT(rect.Width());
+        description.Height = UINT(rect.Height());
 
         if((description.Width == 0) || (description.Height == 0))
         {
@@ -220,14 +269,36 @@ void ExternalLyricWindow::SetUpDX()
             return;
         }
 
-        if(!HR_SUCCESS(dxgi_factory->CreateSwapChainForComposition(
-                        dxgi_device.Get(),
-                        &description,
-                        nullptr,
-                        m_swap_chain.GetAddressOf())))
+        if(m_direct_composition == nullptr)
         {
-            LOG_ERROR("Failed to create DirectX swap chain. Unable to draw lyric panel");
-            return;
+            description.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+            description.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+            if(!HR_SUCCESS(dxgi_factory->CreateSwapChainForHwnd(
+                            dxgi_device.Get(),
+                            m_hWnd,
+                            &description,
+                            nullptr,
+                            nullptr,
+                            m_swap_chain.GetAddressOf()
+                            )))
+            {
+                LOG_ERROR("Failed to create DirectX swap chain for window. Unable to draw lyric panel");
+                return;
+            }
+        }
+        else
+        {
+            description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+            description.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+            if(!HR_SUCCESS(dxgi_factory->CreateSwapChainForComposition(
+                            dxgi_device.Get(),
+                            &description,
+                            nullptr,
+                            m_swap_chain.GetAddressOf())))
+            {
+                LOG_ERROR("Failed to create DirectX swap chain for composition. Unable to draw lyric panel");
+                return;
+            }
         }
     }
 
@@ -245,16 +316,24 @@ void ExternalLyricWindow::SetUpDX()
         return;
     }
 
-    // Create DirectComposition device for composing the swapchain into our window
     bool success = true;
-    success = success && HR_SUCCESS(DCompositionCreateDevice(dxgi_device.Get(),
-                __uuidof(m_dcomp_device), // TODO: Define our own IID GUID for this?
-                (void **)m_dcomp_device.GetAddressOf()));
-    success = success && HR_SUCCESS(m_dcomp_device->CreateTargetForHwnd(m_hWnd, true, m_dcomp_target.GetAddressOf()));
-    success = success && HR_SUCCESS(m_dcomp_device->CreateVisual(m_dcomp_visual.GetAddressOf()));
-    success = success && HR_SUCCESS(m_dcomp_visual->SetContent(m_swap_chain.Get()));
-    success = success && HR_SUCCESS(m_dcomp_target->SetRoot(m_dcomp_visual.Get()));
-    success = success && HR_SUCCESS(m_dcomp_device->Commit());
+    if(m_direct_composition != nullptr)
+    {
+        HRESULT (STDAPICALLTYPE *MyDCompositionCreateDevice)(IDXGIDevice *dxgiDevice, REFIID iid, void **dcompositionDevice) = nullptr;
+        FARPROC dcomp_create_device_proc = GetProcAddress(m_direct_composition, "DCompositionCreateDevice");
+        MyDCompositionCreateDevice = (HRESULT (STDAPICALLTYPE*)(IDXGIDevice *dxgiDevice, REFIID iid, void **dcompositionDevice))dcomp_create_device_proc;
+        success = success && (MyDCompositionCreateDevice != nullptr);
+
+        // Create DirectComposition device for composing the swapchain into our window
+        success = success && HR_SUCCESS(MyDCompositionCreateDevice(dxgi_device.Get(),
+                    __uuidof(m_dcomp_device),
+                    (void **)m_dcomp_device.GetAddressOf()));
+        success = success && HR_SUCCESS(m_dcomp_device->CreateTargetForHwnd(m_hWnd, true, m_dcomp_target.GetAddressOf()));
+        success = success && HR_SUCCESS(m_dcomp_device->CreateVisual(m_dcomp_visual.GetAddressOf()));
+        success = success && HR_SUCCESS(m_dcomp_visual->SetContent(m_swap_chain.Get()));
+        success = success && HR_SUCCESS(m_dcomp_target->SetRoot(m_dcomp_visual.Get()));
+        success = success && HR_SUCCESS(m_dcomp_device->Commit());
+    }
     if(!success)
     {
         LOG_ERROR("Failed to setup the required DirectComposition infrastructure. Unable to draw the lyric panel");
@@ -264,7 +343,14 @@ void ExternalLyricWindow::SetUpDX()
     if(HR_SUCCESS(m_d2d_device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, m_d2d_dc.GetAddressOf())))
     {
         D2D1_BITMAP_PROPERTIES1 properties = {};
-        properties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+        if(m_direct_composition == nullptr)
+        {
+            properties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_IGNORE;
+        }
+        else
+        {
+            properties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+        }
         properties.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
         properties.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
 
@@ -452,11 +538,6 @@ void ExternalLyricWindow::DrawNoLyrics(D2DTextRenderContext& render)
 
     const D2D1_SIZE_F canvas_size = render.device->GetSize();
 
-    // TODO: If we make this text configurable in future and we want to also show some text
-    //       telling you that it didn't search because nothing was found, look into:
-    //       metadb.h (in foo_SDK) -> metadb_display_field_provider
-    //       which exists to let you hook into the title format process and add new fields.
-
     std::string artist = track_metadata(m_now_playing_info, "artist");
     std::string album = track_metadata(m_now_playing_info, "album");
     std::string title = track_metadata(m_now_playing_info, "title");
@@ -538,7 +619,7 @@ void ExternalLyricWindow::DrawUntimedLyrics(LyricData& lyrics, D2DTextRenderCont
         int wrapped_line_height = DrawWrappedLyricLine(render, canvas_size, line.text, origin_y);
         if(wrapped_line_height <= 0)
         {
-            LOG_WARN("Failed to draw unsynced text: %d", GetLastError());
+            LOG_WARN("Failed to draw unsynced text: 0x%x", GetLastError());
             break;
         }
         origin_y += wrapped_line_height;
@@ -639,7 +720,10 @@ void ExternalLyricWindow::DrawTimestampedLyrics(D2DTextRenderContext& render)
 void ExternalLyricWindow::OnWindowDestroy()
 {
     LyricPanel::OnWindowDestroy();
-    cfg_external_window_was_open = 0;
+    if(!core_api::is_shutting_down())
+    {
+        cfg_external_window_was_open = 0;
+    }
 
     m_swap_chain = nullptr;
     m_d3d_device = nullptr;
@@ -655,30 +739,203 @@ void ExternalLyricWindow::OnWindowDestroy()
 LRESULT ExternalLyricWindow::OnWindowCreate(LPCREATESTRUCT params)
 {
     cfg_external_window_was_open = 1;
+    m_mouse_hover = false;
+    m_nc_mouse_hover = false;
 
-    SetUpDX(); // TODO: This is kinda silly because we're going to immediately call this again after we return in the on_resize callback
+    SetUpDX(false); // TODO: This is kinda silly because we're going to immediately call this again after we return in the on_resize callback
     return LyricPanel::OnWindowCreate(params);
 }
 
 void ExternalLyricWindow::OnWindowMove(CPoint new_origin)
 {
     LyricPanel::OnWindowMove(new_origin);
-    cfg_external_window_previous_x = new_origin.x;
-    cfg_external_window_previous_y = new_origin.y;
+
+    // We need to use `GetWindowRect` instead of new_origin because the latter is the
+    // origin for the *client area* of the window, and the config values that we pass
+    // to CreateWindow are for the window as a whole, including the non-client area.
+    // If we instead stored new_origin, the window would slowly inch down and to the
+    // right, nudged by the size of the non-client area every time it got created.
+    RECT rect;
+    GetWindowRect(&rect);
+    cfg_external_window_previous_x = rect.left;
+    cfg_external_window_previous_y = rect.top;
 }
 
 void ExternalLyricWindow::OnWindowResize(UINT request_type, CSize new_size)
 {
-    SetUpDX();
+    // TODO: Instead look into m_swap_chain->ResizeBuffers/ResizeTarget
+    SetUpDX(false);
     LyricPanel::OnWindowResize(request_type, new_size);
     Invalidate();
 
-    cfg_external_window_previous_size_x = new_size.cx;
-    cfg_external_window_previous_size_y = new_size.cy;
+    // We need to use `GetWindowRect` instead of new_size because the latter is the
+    // size of the *client area* of the window, and the config values that we pass
+    // to CreateWindow are for the window as a whole, including the non-client area.
+    // If we instead stored new_size, the window would slowly shrink by the size of
+    // the non-client area every time it got created.
+    RECT rect;
+    GetWindowRect(&rect);
+    cfg_external_window_previous_size_x = rect.right - rect.left;
+    cfg_external_window_previous_size_y = rect.bottom - rect.top;
+}
+
+UINT ExternalLyricWindow::OnNonClientHitTest(CPoint point)
+{
+    RECT client_rect;
+    GetClientRect(&client_rect);
+    ScreenToClient(&point);
+
+    const int border_thickness = 4;
+    const bool left = (point.x >= client_rect.left - border_thickness) && (point.x <= client_rect.left + border_thickness);
+    const bool right = (point.x >= client_rect.right - border_thickness) && (point.x <= client_rect.right + border_thickness);
+    bool top = (point.y >= client_rect.top - border_thickness) && (point.y <= client_rect.top + border_thickness);
+    bool bottom = (point.y >= client_rect.bottom - border_thickness) && (point.y <= client_rect.bottom + border_thickness);
+
+    if(top && left) return HTTOPLEFT;
+    if(top && right) return HTTOPRIGHT;
+    if(bottom && left) return HTBOTTOMLEFT;
+    if(bottom && right) return HTBOTTOMRIGHT;
+    if(top) return HTTOP;
+    if(bottom) return HTBOTTOM;
+    if(left) return HTLEFT;
+    if(right) return HTRIGHT;
+
+    return HTCLIENT; // TODO: HTCAPTION?
+}
+
+LRESULT ExternalLyricWindow::OnNonClientCalcSize(BOOL calc_valid_rects, LPARAM lparam)
+{
+    if(!calc_valid_rects)
+    {
+        SetMsgHandled(false);
+        return 0;
+    }
+
+    const int resize_border_x = GetSystemMetrics(SM_CXFRAME);
+    const int resize_border_y = GetSystemMetrics(SM_CYFRAME);
+    NCCALCSIZE_PARAMS* params = (NCCALCSIZE_PARAMS*)lparam;
+    params->rgrc->right -= resize_border_x;
+    params->rgrc->left += resize_border_x;
+    params->rgrc->bottom -= resize_border_y;
+    params->rgrc->top += resize_border_y;
+    return 0;
+}
+
+void ExternalLyricWindow::OnMouseMove(UINT virtual_keys, CPoint mouse_pos)
+{
+    LyricPanel::OnMouseMove(virtual_keys, mouse_pos);
+
+    if((virtual_keys & MK_LBUTTON) == MK_LBUTTON)
+    {
+        ClientToScreen(&mouse_pos);
+        const int delta_x = mouse_pos.x - m_last_mouse_pos.x;
+        const int delta_y = mouse_pos.y - m_last_mouse_pos.y;
+        m_last_mouse_pos = mouse_pos;
+
+        if((delta_x != 0) || (delta_y != 0))
+        {
+            RECT rect = {};
+            GetWindowRect(&rect);
+            const int new_x = rect.left + delta_x;
+            const int new_y = rect.top + delta_y;
+            BOOL success = SetWindowPos(
+                    HWND_TOPMOST,
+                    new_x,
+                    new_y,
+                    0, // New width
+                    0, // New height
+                    SWP_NOSIZE);
+            if(!success)
+            {
+                LOG_WARN("Failed to set external window position while dragging: 0x%x", GetLastError());
+            }
+        }
+    }
+
+    if(!m_mouse_hover)
+    {
+        Invalidate();
+        m_mouse_hover = true;
+
+        TRACKMOUSEEVENT track = {};
+        track.cbSize = sizeof(track);
+        track.dwFlags = TME_LEAVE;
+        track.hwndTrack = m_hWnd;
+        BOOL success = TrackMouseEvent(&track);
+        if(!success)
+        {
+            LOG_WARN("Failed to request mouse-leave event tracking: %x", GetLastError());
+        }
+    }
+}
+
+void ExternalLyricWindow::OnMouseLeave()
+{
+    m_mouse_hover = false;
+    Invalidate();
+}
+
+void ExternalLyricWindow::OnLMBDown(UINT virtual_keys, CPoint point)
+{
+    LyricPanel::OnLMBDown(virtual_keys, point);
+
+    ClientToScreen(&point);
+    m_last_mouse_pos = point;
+}
+
+void ExternalLyricWindow::OnLMBUp(UINT virtual_keys, CPoint point)
+{
+    LyricPanel::OnLMBUp(virtual_keys, point);
+
+    RECT client_rect;
+    GetClientRect(&client_rect);
+    const CPoint close_btn_corner = {client_rect.right, client_rect.top};
+    const CPoint close_offset = {close_btn_corner.x - point.x, close_btn_corner.y - point.y};
+    const bool close_btn_pressed = ((close_offset.x*close_offset.x + close_offset.y*close_offset.y) < int(CLOSE_BTN_RADIUS*CLOSE_BTN_RADIUS));
+    if(close_btn_pressed)
+    {
+        SendMessage(WM_CLOSE, 0, 0);
+    }
+}
+
+void ExternalLyricWindow::OnNonClientMouseMove(UINT /*virtual_keys*/, CPoint /*point*/)
+{
+    if(!m_nc_mouse_hover)
+    {
+        Invalidate();
+        m_nc_mouse_hover = true;
+
+        TRACKMOUSEEVENT track = {};
+        track.cbSize = sizeof(track);
+        track.dwFlags = TME_LEAVE | TME_NONCLIENT;
+        track.hwndTrack = m_hWnd;
+        BOOL success = TrackMouseEvent(&track);
+        if(!success)
+        {
+            LOG_WARN("Failed to request non-client mouse-leave event tracking: %x", GetLastError());
+        }
+    }
+}
+
+void ExternalLyricWindow::OnNonClientMouseLeave()
+{
+    m_nc_mouse_hover = false;
+    Invalidate();
 }
 
 void ExternalLyricWindow::OnPaint(CDCHandle)
 {
+    // Tell GDI that we've redrawn the window.
+    // We do this here because even if drawing fails below, we don't want to keep getting
+    // called to redraw. It failed once it will almost certainly fail next time too.
+    ValidateRect(nullptr);
+
+    if(IsIconic())
+    {
+        // The window is minimized, don't bother drawing
+        return;
+    }
+
     if(m_search_pending)
     {
         m_search_pending = false;
@@ -711,14 +968,8 @@ void ExternalLyricWindow::OnPaint(CDCHandle)
         LyricUpdateQueue::check_for_available_updates();
     }
 
-    // Tell GDI that we've redrawn the window.
-    // We do this here because even if drawing fails below, we don't want to keep getting
-    // called to redraw. It failed once it will almost certainly fail next time too.
-    ValidateRect(nullptr);
-
     if(m_d2d_dc == nullptr)
     {
-        LOG_WARN("No D2D device context is available. Nothing will be drawn.");
         return;
     }
     D2DTextRenderContext render = {};
@@ -844,15 +1095,90 @@ void ExternalLyricWindow::OnPaint(CDCHandle)
         m_d2d_dc->BeginDraw();
         m_d2d_dc->Clear();
 
-        if(m_d2d_albumart_bitmap != nullptr)
+        const auto get_background_colour = []() -> D2D1_COLOR_F
         {
-            // render.device->DrawBitmap(
-            //         m_d2d_albumart_bitmap.Get(),
-            //         nullptr, // rectangle,
-            //         1.0f, // opacity,
-            //         D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
-            //         nullptr //source_rectangle
-            //         );
+            if(preferences::background::fill_type() == BackgroundFillType::SolidColour)
+            {
+                return colour_gdi2dx(preferences::background::colour());
+            }
+            else
+            {
+                return colour_gdi2dx(defaultui::background_colour());
+            }
+        };
+        const auto size2rect = [](D2D1_SIZE_F size) -> D2D1_RECT_F
+        {
+            D2D1_RECT_F rect = {};
+            rect.right = size.width;
+            rect.bottom = size.height;
+            return rect;
+        };
+
+        // We want the window to still highlight as "hovered" while resizing, so
+        // check if we have either the client or non-client hover flag set.
+        const bool is_window_hovered = m_mouse_hover || m_nc_mouse_hover;
+        if(preferences::background::external_window_opaque())
+        {
+            if(m_d2d_albumart_bitmap != nullptr)
+            {
+                render.device->DrawBitmap(
+                        m_d2d_albumart_bitmap.Get(),
+                        nullptr, // rectangle,
+                        1.0f, // opacity
+                        D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+                        nullptr //source_rectangle
+                        );
+            }
+            else
+            {
+                // We don't have an album art image so just fill with the configured background colour
+                const D2D1_RECT_F rect = size2rect(render.device->GetSize());
+                const D2D1_COLOR_F bg_colour = get_background_colour();
+                render.brush->SetColor(bg_colour);
+                render.device->FillRectangle(rect, render.brush);
+            }
+        }
+        else
+        {
+            // When we have a transparent background we still want to draw a
+            // background while the user's mouse is inside the window.
+            if(is_window_hovered)
+            {
+                const D2D1_RECT_F rect = size2rect(render.device->GetSize());
+                D2D1_COLOR_F bg_colour = get_background_colour();
+                bg_colour.a = 0.75f;
+                render.brush->SetColor(bg_colour);
+                render.device->FillRectangle(rect, render.brush);
+            }
+        }
+
+        if(is_window_hovered)
+        {
+            const float stroke_width = 1.0f;
+
+            const D2D1_SIZE_F render_size = render.device->GetSize();
+            D2D1_RECT_F close_btn_rect = {};
+            close_btn_rect.left = render_size.width - CLOSE_BTN_RADIUS - stroke_width;
+            close_btn_rect.right = render_size.width + CLOSE_BTN_RADIUS;
+            close_btn_rect.top = -CLOSE_BTN_RADIUS;
+            close_btn_rect.bottom = CLOSE_BTN_RADIUS + stroke_width;
+
+            D2D1_ROUNDED_RECT rounded = {};
+            rounded.rect = close_btn_rect;
+            rounded.radiusX = CLOSE_BTN_RADIUS;
+            rounded.radiusY = CLOSE_BTN_RADIUS;
+
+            render.brush->SetColor(colour_gdi2dx(preferences::display::main_text_colour()));
+            render.device->DrawRoundedRectangle(rounded, render.brush, stroke_width, nullptr);
+
+            const float x_radius = CLOSE_BTN_RADIUS * 0.15f;
+            const D2D1_POINT_2F x_centre = {render_size.width - CLOSE_BTN_RADIUS*0.5f, CLOSE_BTN_RADIUS*0.5f};
+            const D2D1_POINT_2F x_topleft = {x_centre.x - x_radius, x_centre.y - x_radius};
+            const D2D1_POINT_2F x_topright = {x_centre.x + x_radius, x_centre.y - x_radius};
+            const D2D1_POINT_2F x_botleft = {x_centre.x - x_radius, x_centre.y + x_radius};
+            const D2D1_POINT_2F x_botright = {x_centre.x + x_radius, x_centre.y + x_radius};
+            render.device->DrawLine(x_topleft, x_botright, render.brush, stroke_width, nullptr);
+            render.device->DrawLine(x_topright, x_botleft, render.brush, stroke_width, nullptr);
         }
 
         if(m_lyrics.IsEmpty())
@@ -873,11 +1199,11 @@ void ExternalLyricWindow::OnPaint(CDCHandle)
         if(end_result == D2DERR_RECREATE_TARGET)
         {
             LOG_INFO("Draw failed with a request to recreate the render target");
-            SetUpDX();
+            SetUpDX(true);
         }
         else if(end_result != S_OK)
         {
-            LOG_WARN("Failed to draw unsynced lyrics: %d", int(end_result));
+            LOG_WARN("Failed to draw unsynced lyrics: 0x%x", uint32_t(end_result));
             StopTimer();
         }
 
@@ -886,7 +1212,7 @@ void ExternalLyricWindow::OnPaint(CDCHandle)
         if(!HR_SUCCESS(m_swap_chain->Present(sync, flags)))
         {
             LOG_WARN("DirectX Present failed, reinitializing...");
-            SetUpDX();
+            SetUpDX(true);
         }
     }
 }
@@ -900,6 +1226,12 @@ void ExternalLyricWindow::compute_background_image()
 {
     LyricPanel::compute_background_image();
     m_d2d_albumart_bitmap.Reset();
+
+    if(m_d2d_dc == nullptr)
+    {
+        LOG_INFO("No Direct2D context available, skipping background image recompute");
+        return;
+    }
 
     bool success = true;
     Microsoft::WRL::ComPtr<IWICImagingFactory> wic_factory = nullptr;

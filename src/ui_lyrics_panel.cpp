@@ -131,6 +131,16 @@ void LyricPanel::compute_background_image()
 
     CRect client_rect;
     WIN32_OP_D(GetClientRect(&client_rect))
+    if((client_rect.Width() == 0) || (client_rect.Height() == 0))
+    {
+        // This happens, for example, when we minimize the external window.
+        // In that case there's no point re-computing the (now empty) background.
+        // If we keep the original image around then it'll still be here when we
+        // maximise again.
+        LOG_INFO("Ignoring request to compute zero-size background image");
+        return;
+    }
+
     Image bg_colour = {};
     switch(preferences::background::fill_type())
     {
@@ -288,6 +298,7 @@ LRESULT LyricPanel::OnWindowCreate(LPCREATESTRUCT /*params*/)
         on_playback_new_track(track);
     }
 
+    m_child_abort.reset(); // Reset this on create so that when the external window get's recreated, this state makes sense
     g_active_panels.push_back(this);
 
     // Register for notifications about available album art
@@ -358,6 +369,18 @@ void LyricPanel::OnWindowResize(UINT /*request_type*/, CSize new_size)
     {
         compute_background_image();
     }
+}
+
+LRESULT LyricPanel::OnNonClientCalcSize(BOOL /*calc_valid_rects*/, LPARAM /*lparam*/)
+{
+    SetMsgHandled(false);
+    return 0;
+}
+
+UINT LyricPanel::OnNonClientHitTest(CPoint /*point*/)
+{
+    SetMsgHandled(false);
+    return 0;
 }
 
 LRESULT LyricPanel::OnTimer(WPARAM /*wParam*/)
@@ -988,6 +1011,7 @@ void LyricPanel::OnContextMenu(CWindow window, CPoint point)
             ID_AUTO_FIX_MALFORMED_TIMESTAMPS,
             ID_AUTO_REMOVE_TIMESTAMPS,
             ID_DELETE_CURRENT_LYRICS,
+            ID_OPEN_EXTERNAL_WINDOW,
             ID_CMD_COUNT,
         };
 
@@ -1013,6 +1037,7 @@ void LyricPanel::OnContextMenu(CWindow window, CPoint point)
         AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenu(menu, MF_STRING | disabled_without_nowplaying, ID_EDIT_LYRICS, _T("Edit lyrics"));
         AppendMenu(menu, MF_STRING | MF_POPUP, (UINT_PTR)menu_edit.m_hMenu, _T("Auto-edit lyrics"));
+        AppendMenu(menu, MF_STRING, ID_OPEN_EXTERNAL_WINDOW, _T("Open external window"));
         AppendMenu(menu, MF_STRING | disabled_without_nowplaying | disabled_without_lyrics, ID_OPEN_FILE_DIR, _T("Open file location"));
         AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenu(menu, MF_STRING, ID_PREFERENCES, _T("Preferences"));
@@ -1038,6 +1063,10 @@ void LyricPanel::OnContextMenu(CWindow window, CPoint point)
         int cmd = menu.TrackPopupMenu(TPM_RIGHTBUTTON | TPM_NONOTIFY | TPM_RETURNCMD, point.x, point.y, menudesc, nullptr);
         switch(cmd)
         {
+            case ID_OPEN_EXTERNAL_WINDOW:
+            {
+                show_external_lyric_window();
+            } break;
             case ID_SEARCH_LYRICS:
             {
                 if(m_now_playing == nullptr) break;
