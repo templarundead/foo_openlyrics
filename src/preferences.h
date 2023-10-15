@@ -3,6 +3,7 @@
 #include "stdafx.h"
 
 extern const GUID GUID_PREFERENCES_PAGE_ROOT;
+extern const GUID GUID_PREFERENCES_PAGE_SEARCH;
 
 // NOTE: These enums must change in a backward-compatible manner.
 //       This means that values can never be removed or re-used.
@@ -88,10 +89,11 @@ namespace preferences
     {
         uint64_t source_config_generation();
         std::vector<GUID> active_sources();
-        std::vector<std::string> tags();
         bool exclude_trailing_brackets();
+        const pfc::string8& skip_filter();
 
-        std::string musixmatch_api_key();
+        std::vector<std::string> tags();
+        std::string_view musixmatch_api_key();
 
         namespace raw
         {

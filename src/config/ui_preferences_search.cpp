@@ -8,18 +8,17 @@
 
 #include "config/config_auto.h"
 #include "logging.h"
-#include "lyric_data.h"
 #include "preferences.h"
 #include "sources/lyric_source.h"
+#include "ui_util.h"
 #include "win32_util.h"
 
-extern const GUID GUID_PREFERENCES_PAGE_ROOT = { 0x29e96cfa, 0xab67, 0x4793, { 0xa1, 0xc3, 0xef, 0xc3, 0xa, 0xbc, 0x8b, 0x74 } };
+extern const GUID GUID_PREFERENCES_PAGE_SEARCH = { 0x73e2261d, 0x4a71, 0x427a, { 0x92, 0x57, 0xec, 0xaa, 0x17, 0xb9, 0xa8, 0xc8 } };
 
 static const GUID GUID_CFG_SEARCH_ACTIVE_SOURCES_GENERATION = { 0x9046aa4a, 0x352e, 0x4467, { 0xbc, 0xd2, 0xc4, 0x19, 0x47, 0xd2, 0xbf, 0x24 } };
 static const GUID GUID_CFG_SEARCH_ACTIVE_SOURCES = { 0x7d3c9b2c, 0xb87b, 0x4250, { 0x99, 0x56, 0x8d, 0xf5, 0x80, 0xc9, 0x2f, 0x39 } };
-static const GUID GUID_CFG_SEARCH_TAGS = { 0xb7332708, 0xe70b, 0x4a6e, { 0xa4, 0xd, 0x14, 0x6d, 0xe3, 0x74, 0x56, 0x65 } };
 static const GUID GUID_CFG_SEARCH_EXCLUDE_TRAILING_BRACKETS = { 0x2cbdf6c3, 0xdb8c, 0x43d4, { 0xb5, 0x40, 0x76, 0xc0, 0x4a, 0x39, 0xa7, 0xc7 } };
-static const GUID GUID_CFG_SEARCH_MUSIXMATCH_TOKEN = { 0xb88a82a7, 0x746d, 0x44f3, { 0xb8, 0x34, 0x9b, 0x9b, 0xe2, 0x6f, 0x8, 0x4c } };
+static const GUID GUID_CFG_SEARCH_SKIP_FILTER = { 0x4c6e3dac, 0xb668, 0x4056, { 0x8c, 0xb7, 0x52, 0x89, 0x1a, 0x57, 0x1f, 0x3a } };
 
 // NOTE: These were copied from the relevant lyric-source source file.
 //       It should not be a problem because these GUIDs must never change anyway (since it would
@@ -34,15 +33,13 @@ static const GUID cfg_search_active_sources_default[] = {localfiles_src_guid, me
 
 static cfg_int_t<uint64_t> cfg_search_active_sources_generation(GUID_CFG_SEARCH_ACTIVE_SOURCES_GENERATION, 0);
 static cfg_objList<GUID>   cfg_search_active_sources(GUID_CFG_SEARCH_ACTIVE_SOURCES, cfg_search_active_sources_default);
-static cfg_auto_string     cfg_search_tags(GUID_CFG_SEARCH_TAGS, IDC_SEARCH_TAGS, "LYRICS;SYNCEDLYRICS;UNSYNCED LYRICS;UNSYNCEDLYRICS");
 static cfg_auto_bool       cfg_search_exclude_trailing_brackets(GUID_CFG_SEARCH_EXCLUDE_TRAILING_BRACKETS, IDC_SEARCH_EXCLUDE_BRACKETS, true);
-static cfg_auto_string     cfg_search_musixmatch_token(GUID_CFG_SEARCH_MUSIXMATCH_TOKEN, IDC_SEARCH_MUSIXMATCH_TOKEN, "");
+static cfg_auto_string     cfg_search_skip_filter(GUID_CFG_SEARCH_SKIP_FILTER, IDC_SEARCH_SKIP_FILTER_STR, "$stricmp(%genre%,instrumental))$stricmp(%genre%,classical)");
 
-static cfg_auto_property* g_root_auto_properties[] =
+static cfg_auto_property* g_searching_auto_properties[] =
 {
-    &cfg_search_tags,
     &cfg_search_exclude_trailing_brackets,
-    &cfg_search_musixmatch_token,
+    &cfg_search_skip_filter,
 };
 
 uint64_t preferences::searching::source_config_generation()
@@ -72,38 +69,9 @@ std::vector<GUID> preferences::searching::active_sources()
     return result;
 }
 
-std::vector<std::string> preferences::searching::tags()
-{
-    const std::string_view setting = {cfg_search_tags.get_ptr(), cfg_search_tags.get_length()};
-    std::vector<std::string> result;
-
-    size_t prev_index = 0;
-    for(size_t i=0; i<setting.length(); i++) // Avoid infinite loops
-    {
-        size_t next_index = setting.find(';', prev_index);
-        size_t len = next_index - prev_index;
-        if(len > 0)
-        {
-            result.emplace_back(setting.substr(prev_index, len));
-        }
-
-        if((next_index == std::string_view::npos) || (next_index >= setting.length()))
-        {
-            break;
-        }
-        prev_index = next_index + 1;
-    }
-    return result;
-}
-
 bool preferences::searching::exclude_trailing_brackets()
 {
     return cfg_search_exclude_trailing_brackets.get_value();
-}
-
-std::string preferences::searching::musixmatch_api_key()
-{
-    return std::string(cfg_search_musixmatch_token.get_ptr(), cfg_search_musixmatch_token.get_length());
 }
 
 std::vector<GUID> preferences::searching::raw::active_sources_configured()
@@ -119,26 +87,28 @@ std::vector<GUID> preferences::searching::raw::active_sources_configured()
     return result;
 }
 
+const pfc::string8& preferences::searching::skip_filter()
+{
+    return cfg_search_skip_filter.get();
+}
+
 const LRESULT MAX_SOURCE_NAME_LENGTH = 64;
 
-// The UI for the root element (for OpenLyrics) in the preferences UI tree
-class PreferencesRoot : public CDialogImpl<PreferencesRoot>, public auto_preferences_page_instance
+class PreferencesSearching : public CDialogImpl<PreferencesSearching>, public auto_preferences_page_instance, private play_callback_impl_base
 {
 public:
     // Constructor - invoked by preferences_page_impl helpers - don't do Create() in here, preferences_page_impl does this for us
-    PreferencesRoot(preferences_page_callback::ptr callback) : auto_preferences_page_instance(callback, g_root_auto_properties) {}
+    PreferencesSearching(preferences_page_callback::ptr callback) : auto_preferences_page_instance(callback, g_searching_auto_properties) {}
 
     // Dialog resource ID - Required by WTL/Create()
-    enum {IDD = IDD_PREFERENCES_ROOT};
+    enum {IDD = IDD_PREFERENCES_SEARCHING};
 
     void apply() override;
     void reset() override;
     bool has_changed() override;
 
-    BEGIN_MSG_MAP_EX(PreferencesRoot)
+    BEGIN_MSG_MAP_EX(PreferencesSearching)
         MSG_WM_INITDIALOG(OnInitDialog)
-        COMMAND_HANDLER_EX(IDC_SEARCH_TAGS, EN_CHANGE, OnUIChange)
-        COMMAND_HANDLER_EX(IDC_SEARCH_MUSIXMATCH_TOKEN, EN_CHANGE, OnUIChange)
         COMMAND_HANDLER_EX(IDC_SEARCH_EXCLUDE_BRACKETS, BN_CLICKED, OnUIChange)
         COMMAND_HANDLER_EX(IDC_SOURCE_MOVE_UP_BTN, BN_CLICKED, OnMoveUp)
         COMMAND_HANDLER_EX(IDC_SOURCE_MOVE_DOWN_BTN, BN_CLICKED, OnMoveDown)
@@ -146,11 +116,13 @@ public:
         COMMAND_HANDLER_EX(IDC_SOURCE_DEACTIVATE_BTN, BN_CLICKED, OnSourceDeactivate)
         COMMAND_HANDLER_EX(IDC_ACTIVE_SOURCE_LIST, LBN_SELCHANGE, OnActiveSourceSelect)
         COMMAND_HANDLER_EX(IDC_INACTIVE_SOURCE_LIST, LBN_SELCHANGE, OnInactiveSourceSelect)
-        COMMAND_HANDLER_EX(IDC_SEARCH_MUSIXMATCH_HELP, BN_CLICKED, OnMusixmatchHelp)
-        COMMAND_HANDLER_EX(IDC_SEARCH_MUSIXMATCH_SHOW, BN_CLICKED, OnMusixmatchShow)
+        COMMAND_HANDLER_EX(IDC_SEARCH_SKIP_FILTER_STR, EN_CHANGE, OnSkipFilterFormatChange)
+        NOTIFY_HANDLER_EX(IDC_SEARCH_SYNTAX_HELP, NM_CLICK, OnSyntaxHelpClicked)
     END_MSG_MAP()
 
 private:
+    void on_playback_new_track(metadb_handle_ptr track) override;
+
     BOOL OnInitDialog(CWindow, LPARAM);
     void OnUIChange(UINT, int, CWindow);
     void OnMoveUp(UINT, int, CWindow);
@@ -159,38 +131,41 @@ private:
     void OnSourceDeactivate(UINT, int, CWindow);
     void OnActiveSourceSelect(UINT, int, CWindow);
     void OnInactiveSourceSelect(UINT, int, CWindow);
-    void OnMusixmatchHelp(UINT, int, CWindow);
-    void OnMusixmatchShow(UINT, int, CWindow);
+    void OnSkipFilterFormatChange(UINT, int, CWindow);
+    LRESULT OnSyntaxHelpClicked(NMHDR*);
 
     void SourceListInitialise();
     void SourceListResetFromSaved();
     void SourceListResetToDefault();
     void SourceListApply();
     bool SourceListHasChanged();
-
-    LRESULT m_default_password_char;
+    void UpdateSkipFilterPreview();
 
     fb2k::CCoreDarkModeHooks m_dark;
 };
 
-BOOL PreferencesRoot::OnInitDialog(CWindow, LPARAM)
+void PreferencesSearching::on_playback_new_track(metadb_handle_ptr /*track*/)
+{
+    UpdateSkipFilterPreview();
+}
+
+BOOL PreferencesSearching::OnInitDialog(CWindow, LPARAM)
 {
     m_dark.AddDialogWithControls(m_hWnd);
 
     SourceListInitialise();
+    UpdateSkipFilterPreview();
     init_auto_preferences();
 
-    CWindow token = GetDlgItem(IDC_SEARCH_MUSIXMATCH_TOKEN);
-    m_default_password_char = SendDlgItemMessage(IDC_SEARCH_MUSIXMATCH_TOKEN, EM_GETPASSWORDCHAR, 0, 0);
     return FALSE;
 }
 
-void PreferencesRoot::OnUIChange(UINT, int, CWindow)
+void PreferencesSearching::OnUIChange(UINT, int, CWindow)
 {
     on_ui_interaction();
 }
 
-void PreferencesRoot::OnMoveUp(UINT, int, CWindow)
+void PreferencesSearching::OnMoveUp(UINT, int, CWindow)
 {
     LRESULT select_index = SendDlgItemMessage(IDC_ACTIVE_SOURCE_LIST, LB_GETCURSEL, 0, 0);
     if(select_index == LB_ERR)
@@ -225,7 +200,7 @@ void PreferencesRoot::OnMoveUp(UINT, int, CWindow)
     on_ui_interaction();
 }
 
-void PreferencesRoot::OnMoveDown(UINT, int, CWindow)
+void PreferencesSearching::OnMoveDown(UINT, int, CWindow)
 {
     LRESULT item_count = SendDlgItemMessage(IDC_ACTIVE_SOURCE_LIST, LB_GETCOUNT, 0, 0);
     assert(item_count != LB_ERR);
@@ -263,7 +238,7 @@ void PreferencesRoot::OnMoveDown(UINT, int, CWindow)
     on_ui_interaction();
 }
 
-void PreferencesRoot::OnSourceActivate(UINT, int, CWindow)
+void PreferencesSearching::OnSourceActivate(UINT, int, CWindow)
 {
     LRESULT select_index = SendDlgItemMessage(IDC_INACTIVE_SOURCE_LIST, LB_GETCURSEL, 0, 0);
     if(select_index == LB_ERR)
@@ -314,7 +289,7 @@ void PreferencesRoot::OnSourceActivate(UINT, int, CWindow)
     on_ui_interaction();
 }
 
-void PreferencesRoot::OnSourceDeactivate(UINT, int, CWindow)
+void PreferencesSearching::OnSourceDeactivate(UINT, int, CWindow)
 {
     LRESULT select_index = SendDlgItemMessage(IDC_ACTIVE_SOURCE_LIST, LB_GETCURSEL, 0, 0);
     if(select_index == LB_ERR)
@@ -365,7 +340,7 @@ void PreferencesRoot::OnSourceDeactivate(UINT, int, CWindow)
     on_ui_interaction();
 }
 
-void PreferencesRoot::OnActiveSourceSelect(UINT, int, CWindow)
+void PreferencesSearching::OnActiveSourceSelect(UINT, int, CWindow)
 {
     LRESULT select_index = SendDlgItemMessage(IDC_ACTIVE_SOURCE_LIST, LB_GETCURSEL, 0, 0);
     LRESULT item_count = SendDlgItemMessage(IDC_ACTIVE_SOURCE_LIST, LB_GETCOUNT, 0, 0);
@@ -389,7 +364,7 @@ void PreferencesRoot::OnActiveSourceSelect(UINT, int, CWindow)
     move_down_btn.EnableWindow((select_index != LB_ERR) && (select_index+1 != item_count));
 }
 
-void PreferencesRoot::OnInactiveSourceSelect(UINT, int, CWindow)
+void PreferencesSearching::OnInactiveSourceSelect(UINT, int, CWindow)
 {
     SendDlgItemMessage(IDC_ACTIVE_SOURCE_LIST, LB_SETCURSEL, WPARAM(-1));
 
@@ -408,72 +383,84 @@ void PreferencesRoot::OnInactiveSourceSelect(UINT, int, CWindow)
     move_down_btn.EnableWindow(FALSE);
 }
 
-void PreferencesRoot::OnMusixmatchHelp(UINT, int, CWindow)
+void PreferencesSearching::UpdateSkipFilterPreview()
 {
-    popup_message_v3::query_t query = {};
-    query.title = "Musixmatch Help";
-    query.msg = "The Musixmatch source requires an authentication token to work. Without one it will not find any lyrics.\r\n\r\nAn authentication token is roughly like a randomly-generated password that musixmatch uses to differentiate between different users.\r\n\r\nWould you like OpenLyrics to attempt to get a token automatically for you now?";
-    query.buttons = popup_message_v3::buttonYes | popup_message_v3::buttonNo;
-    query.defButton = popup_message_v3::buttonNo;
-    query.icon = popup_message_v3::iconInformation;
-    uint32_t popup_result = popup_message_v3::get()->show_query_modal(query);
-    if(popup_result == popup_message_v3::buttonYes)
-    {
-        std::string output_token;
-        const auto async_search = [&output_token](threaded_process_status& /*status*/, abort_callback& abort)
-        {
-            output_token = musixmatch_get_token(abort);
-        };
-        bool success = threaded_process::g_run_modal(threaded_process_callback_lambda::create(async_search),
-                                                     threaded_process::flag_show_abort,
-                                                     m_hWnd,
-                                                     "Attempting to get Musixmatch token...");
+    const TCHAR* search_allowed_text = _T("Search is allowed");
+    const TCHAR* search_skipped_text = _T("Output is not empty, search will be skipped");
 
-        if(!success || output_token.empty())
-        {
-            popup_message_v3::query_t failed_query = {};
-            failed_query.title = "Musixmatch Help";
-            failed_query.msg = "Failed to automatically get a Musixmatch token.\r\n\r\nYou could try to get a token manually, using the instructions found here:\r\nhttps://github.com/khanhas/genius-spicetify#musicxmatch";
-            failed_query.buttons = popup_message_v3::buttonOK;
-            failed_query.defButton = popup_message_v3::buttonOK;
-            failed_query.icon = popup_message_v3::iconWarning;
-            popup_message_v3::get()->show_query_modal(failed_query);
-        }
-        else
-        {
-            std::tstring ui_token = to_tstring(output_token);
-            SetDlgItemText(IDC_SEARCH_MUSIXMATCH_TOKEN, ui_token.c_str());
-        }
+    CWindow output_edit = GetDlgItem(IDC_SEARCH_SKIP_FILTER_OUTPUT);
+    CWindow result_text = GetDlgItem(IDC_SEARCH_SKIP_FILTER_RESULT);
+    assert(output_edit != nullptr);
+    assert(result_text != nullptr);
+
+    LRESULT format_text_length_result = SendDlgItemMessage(IDC_SEARCH_SKIP_FILTER_STR, WM_GETTEXTLENGTH, 0, 0);
+    if(format_text_length_result <= 0)
+    {
+        output_edit.SetWindowText(_T(""));
+        result_text.SetWindowText(search_allowed_text);
+        return;
     }
+
+    const size_t format_text_length = (size_t)format_text_length_result;
+    TCHAR* format_text_buffer = new TCHAR[format_text_length+1]; // +1 for null-terminator
+    GetDlgItemText(IDC_SEARCH_SKIP_FILTER_STR, format_text_buffer, int(format_text_length+1));
+    const std::string format_text = from_tstring(std::tstring_view{format_text_buffer, format_text_length});
+    delete[] format_text_buffer;
+
+    titleformat_object::ptr format_script;
+    const bool compile_success = titleformat_compiler::get()->compile(format_script, format_text.c_str());
+    if(!compile_success)
+    {
+        output_edit.SetWindowText(_T("<Invalid format>"));
+        result_text.SetWindowText(search_allowed_text);
+        return;
+    }
+
+    const metadb_handle_ptr preview_track = get_format_preview_track();
+    if(preview_track == nullptr)
+    {
+        output_edit.SetWindowText(_T("<No track selected or playing to preview>"));
+        result_text.SetWindowText(_T(""));
+        return;
+    }
+
+    pfc::string8 formatted;
+    bool format_success = preview_track->format_title(nullptr, formatted, format_script, nullptr);
+    if(!format_success)
+    {
+        output_edit.SetWindowText(_T("<Error while applying format>"));
+        result_text.SetWindowText(_T(""));
+    }
+
+    std::tstring preview = to_tstring(formatted);
+    output_edit.SetWindowText(preview.c_str());
+    result_text.SetWindowText(preview.empty() ? search_allowed_text : search_skipped_text);
 }
 
-void PreferencesRoot::OnMusixmatchShow(UINT, int, CWindow)
+void PreferencesSearching::OnSkipFilterFormatChange(UINT, int, CWindow)
 {
-    CWindow token = GetDlgItem(IDC_SEARCH_MUSIXMATCH_TOKEN);
-    LRESULT password_char = token.SendMessage(EM_GETPASSWORDCHAR, 0, 0);
-    if(password_char == m_default_password_char)
-    {
-        token.SendMessage(EM_SETPASSWORDCHAR, 0, 0);
-    }
-    else
-    {
-        token.SendMessage(EM_SETPASSWORDCHAR, m_default_password_char, 0);
-    }
-    token.Invalidate(); // Force it to redraw with the new character
+    on_ui_interaction();
+    UpdateSkipFilterPreview();
 }
 
-void PreferencesRoot::reset()
+LRESULT PreferencesSearching::OnSyntaxHelpClicked(NMHDR* /*notify_msg*/)
+{
+    standard_commands::main_titleformat_help();
+    return 0;
+}
+
+void PreferencesSearching::reset()
 {
     SourceListResetToDefault();
     auto_preferences_page_instance::reset();
 }
 
-void PreferencesRoot::apply()
+void PreferencesSearching::apply()
 {
     SourceListApply();
     auto_preferences_page_instance::apply();
 
-    bool has_musixmatch_token = (cfg_search_musixmatch_token.get_length() > 0);
+    const bool has_musixmatch_token = !preferences::searching::musixmatch_api_key().empty();
     bool musixmatch_enabled = false;
 
     size_t source_count = cfg_search_active_sources.get_size();
@@ -498,18 +485,18 @@ void PreferencesRoot::apply()
     }
 }
 
-bool PreferencesRoot::has_changed()
+bool PreferencesSearching::has_changed()
 {
     if(SourceListHasChanged()) return true;
     return auto_preferences_page_instance::has_changed();
 }
 
-void PreferencesRoot::SourceListInitialise()
+void PreferencesSearching::SourceListInitialise()
 {
     SourceListResetFromSaved();
 }
 
-void PreferencesRoot::SourceListResetFromSaved()
+void PreferencesSearching::SourceListResetFromSaved()
 {
     SendDlgItemMessage(IDC_ACTIVE_SOURCE_LIST, LB_RESETCONTENT, 0, 0);
     SendDlgItemMessage(IDC_INACTIVE_SOURCE_LIST, LB_RESETCONTENT, 0, 0);
@@ -567,7 +554,7 @@ void PreferencesRoot::SourceListResetFromSaved()
     }
 }
 
-void PreferencesRoot::SourceListResetToDefault()
+void PreferencesSearching::SourceListResetToDefault()
 {
     SendDlgItemMessage(IDC_ACTIVE_SOURCE_LIST, LB_RESETCONTENT, 0, 0);
     SendDlgItemMessage(IDC_INACTIVE_SOURCE_LIST, LB_RESETCONTENT, 0, 0);
@@ -623,7 +610,7 @@ void PreferencesRoot::SourceListResetToDefault()
     }
 }
 
-void PreferencesRoot::SourceListApply()
+void PreferencesSearching::SourceListApply()
 {
     cfg_search_active_sources.remove_all();
 
@@ -641,7 +628,7 @@ void PreferencesRoot::SourceListApply()
     }
 }
 
-bool PreferencesRoot::SourceListHasChanged()
+bool PreferencesSearching::SourceListHasChanged()
 {
     size_t saved_item_count = cfg_search_active_sources.get_count();
     LRESULT ui_item_count_result = SendDlgItemMessage(IDC_ACTIVE_SOURCE_LIST, LB_GETCOUNT, 0, 0);
@@ -674,12 +661,11 @@ bool PreferencesRoot::SourceListHasChanged()
     return false;
 }
 
-class PreferencesRootImpl : public preferences_page_impl<PreferencesRoot>
+class PreferencesSearchImpl : public preferences_page_impl<PreferencesSearching>
 {
 public:
-    const char* get_name() { return "OpenLyrics"; }
-    GUID get_guid() { return GUID_PREFERENCES_PAGE_ROOT; }
-    GUID get_parent_guid() { return guid_tools; }
+    const char* get_name() { return "Searching"; }
+    GUID get_guid() { return GUID_PREFERENCES_PAGE_SEARCH; }
+    GUID get_parent_guid() { return GUID_PREFERENCES_PAGE_ROOT; }
 };
-
-static preferences_page_factory_t<PreferencesRootImpl> g_preferences_page_root_factory;
+static preferences_page_factory_t<PreferencesSearchImpl> g_preferences_page_search_factory;
