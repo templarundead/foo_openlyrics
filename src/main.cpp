@@ -1,6 +1,6 @@
 #include "stdafx.h"
 
-#define OPENLYRICS_VERSION "1.7"
+#define OPENLYRICS_VERSION "1.8"
 
 // Declaration of your component's version information
 // Since foobar2000 v1.0 having at least one of these in your DLL is mandatory to let the troubleshooter tell different versions of your component apart.
@@ -27,6 +27,17 @@ void OpenLyricsVersion::get_about_message(pfc::string_base & out)
     out += "Source available at https://github.com/jacquesh/foo_openlyrics\n";
     out += "You can support development at https://www.buymeacoffee.com/jacquesheunis\n";
     out += "\nChangelog:\n";
+    out += "Version 1.8 (2023-10-28):\n"
+    "- Searches that are 'skipped' now still search local sources\n"
+    "  - This means that you'll still see lyrics for tracks matching the\n"
+    "    skip filter if they were already available from a local source.\n"
+    "  - For example if you already have (or explicitly search for) lyrics\n"
+    "    saved to file for a track whose genre is 'Instrumental' (which\n"
+    "    matches the default skip filter) then those will still show up.\n"
+    "- Change the default search filter to consider multi-value genre tags\n"
+    "- Fixed the default search skip filter never skipping anything\n"
+    "- Fix the parsing of line breaks in lyrics from genius.com\n"
+    "\n";
     out += "Version 1.7 (2023-10-18):\n"
     "- Add support for album art or a custom image file as the panel background\n"
     "- Add support for gradients to the background colour preferences\n"
