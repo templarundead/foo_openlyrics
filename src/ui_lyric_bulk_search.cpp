@@ -340,7 +340,7 @@ LRESULT BulkLyricSearch::OnTimer(WPARAM)
         subitem_status.mask = LVIF_TEXT;
         subitem_status.iItem = m_next_search_index;
         subitem_status.iSubItem = 2;
-        subitem_status.pszText = _T("Searching...");
+        subitem_status.pszText = _T("Searching…");
         LRESULT status_success = SendDlgItemMessageW(IDC_BULKSEARCH_LIST, LVM_SETITEMTEXT, m_next_search_index, (LPARAM)&subitem_status);
         assert(status_success);
 
