@@ -102,7 +102,7 @@ BOOL BulkLyricSearch::OnInitDialog(CWindow /*parent*/, LPARAM /*clientData*/)
     status_column.mask = LVCF_TEXT | LVCF_FMT | LVCF_WIDTH;
     status_column.fmt = LVCFMT_LEFT;
     status_column.pszText = _T("Status");
-    status_column.cx = 93;
+    status_column.cx = 95;
     LRESULT status_index = SendDlgItemMessage(IDC_BULKSEARCH_LIST, LVM_INSERTCOLUMN, 2, (LPARAM)&status_column);
     assert(status_index >= 0);
 
