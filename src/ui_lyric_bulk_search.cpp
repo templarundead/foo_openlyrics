@@ -74,7 +74,7 @@ BulkLyricSearch::~BulkLyricSearch()
 
 BOOL BulkLyricSearch::OnInitDialog(CWindow /*parent*/, LPARAM /*clientData*/)
 {
-    LOG_INFO("Initializing bulk search window...");
+    LOG_INFO("Initializing bulk search window…");
     metrics::log_used_bulk_search();
 
     // TODO: We can't enable dark mode for this dialog because it adds items to a list
@@ -201,7 +201,7 @@ void BulkLyricSearch::add_tracks(const std::vector<metadb_handle_ptr>& tracks_to
             subitem_status.mask = LVIF_TEXT;
             subitem_status.iItem = m_next_search_index;
             subitem_status.iSubItem = 2;
-            subitem_status.pszText = _T("Searching...");
+            subitem_status.pszText = _T("Searching…");
             LRESULT status_success = SendDlgItemMessageW(IDC_BULKSEARCH_LIST, LVM_SETITEMTEXT, m_next_search_index, (LPARAM)&subitem_status);
             assert(status_success);
 
@@ -239,7 +239,7 @@ void BulkLyricSearch::add_tracks_to_ui(const std::vector<TrackAndInfo>& new_trac
         LRESULT artist_success = SendDlgItemMessageW(IDC_BULKSEARCH_LIST, LVM_SETITEMTEXT, item_index, (LPARAM)&subitem_artist);
         assert(artist_success);
 
-        const TCHAR* status_string = ((item_index == 0) ? _T("Searching...") : _T(""));
+        const TCHAR* status_string = ((item_index == 0) ? _T("Searching…") : _T(""));
         LVITEM subitem_status = {};
         subitem_status.mask = LVIF_TEXT;
         subitem_status.iItem = int(item_index);
@@ -334,13 +334,13 @@ LRESULT BulkLyricSearch::OnTimer(WPARAM)
         // that there is always one row that says it's searching, even during the extra delay
         // time between searches of online sources.
         // This is just to make it look better to the user, who might easily think it's broken
-        // if it visibly just sits for several seconds between searches (which...admittedly it
+        // if it visibly just sits for several seconds between searches (which…admittedly it
         // does do, but it's by design, it's not a bug).
         LVITEM subitem_status = {};
         subitem_status.mask = LVIF_TEXT;
         subitem_status.iItem = m_next_search_index;
         subitem_status.iSubItem = 2;
-        subitem_status.pszText = _T("Searching...");
+        subitem_status.pszText = _T("Searching…");
         LRESULT status_success = SendDlgItemMessageW(IDC_BULKSEARCH_LIST, LVM_SETITEMTEXT, m_next_search_index, (LPARAM)&subitem_status);
         assert(status_success);
 
@@ -383,7 +383,7 @@ HWND SpawnBulkLyricSearch(std::vector<metadb_handle_ptr> tracks_to_search)
         return g_active_bulk_search_panel->m_hWnd;
     }
 
-    LOG_INFO("Spawning bulk search window...");
+    LOG_INFO("Spawning bulk search window…");
     HWND result = nullptr;
     try
     {
