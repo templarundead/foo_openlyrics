@@ -30,8 +30,14 @@ static void compute_about_message_string(pfc::string_base & out)
     // out += "Version " OPENLYRICS_VERSION " (" __DATE__ "):\n"
     // "\n";
     out += "Version " OPENLYRICS_VERSION " (" __DATE__ "):\n"
+    "- Migrate the genius.com source from web scraping to using the API\n"
+    "- Enforce a limit on the number of search results returned from LRCLib\n"
+    "- Add a label to the root preferences page prompting to check the subpages\n"
     "- Fix a crash when trying to show lyrics for a track with none saved\n"
     "- Fix letras.com returning random lyrics when a good match isn't found\n"
+    "- Fix SongLyrics.com still returning lyrics saying there are no lyrics\n"
+    "- Fix a potential crash while hashing for metrics or LRCLib upload\n"
+    "- Fix the editor occasionally producing an invalid timestamp on line sync\n"
     "\n";
     out += "Version 1.11 (2024-09-05):\n"
     "- Add a source for Bandcamp.com\n"
@@ -354,7 +360,7 @@ VALIDATE_COMPONENT_FILENAME("foo_openlyrics.dll");
 // ============
 // Tests
 // ============
-#ifdef MVTF_TESTS_ENABLED
+#if MVTF_TESTS_ENABLED
 #include "string_split.h"
 
 MVTF_TEST(changelog_isnt_empty)

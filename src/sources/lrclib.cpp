@@ -18,6 +18,9 @@
 
 static const GUID src_guid = { 0x9b4be445, 0x9a38, 0x4342, { 0xab, 0x72, 0x6f, 0x55, 0x8c, 0x4, 0x4d, 0xc0 } };
 
+// We could get up to twice this many because LRCLib can provide both synced and unsynced lyrics for each item
+constexpr int RESULT_LIMIT = 3;
+
 class LrclibLyricsSource : public LyricSourceRemote
 {
     const GUID& id() const final { return src_guid; }
@@ -150,9 +153,16 @@ std::vector<LyricDataRaw> LrclibLyricsSource::search_for_lyrics(std::string_view
 
     std::vector<LyricDataRaw> results;
     cJSON* json_result = nullptr;
+    int result_count = 0;
     cJSON_ArrayForEach(json_result, json)
     {
         parse_lyric_result(json_result, results);
+
+        result_count++;
+        if(result_count >= RESULT_LIMIT)
+        {
+            break;
+        }
     }
 
     cJSON_Delete(json);
@@ -328,7 +338,6 @@ static uint64_t solve_challenge(const UploadChallenge& challenge, abort_callback
     LARGE_INTEGER start_time = {};
     QueryPerformanceCounter(&start_time);
 
-    Sha256Context sha;
     uint8_t target_buffer[32] = {};
     uint8_t hash_buffer[32] = {};
     char combined_input[128] = {};
@@ -350,10 +359,16 @@ static uint64_t solve_challenge(const UploadChallenge& challenge, abort_callback
         const size_t nonce_len = (size_t)snprintf(nonce_start_ptr, nonce_capacity, "%llu", nonce);
         const size_t combined_len = prefix_len + nonce_len;
 
+        Sha256Context sha;
         sha.add_data((uint8_t*)&combined_input[0], combined_len);
         sha.finalise(hash_buffer);
 
         if(is_hash_less_or_equal(hash_buffer, target_buffer)) {
+            break;
+        }
+        if(sha.m_error)
+        {
+            LOG_WARN("Breaking out of proof of work calculation due to error in hash calculation");
             break;
         }
         if((nonce % 1024 == 0) && (abort.is_aborting()))
@@ -501,7 +516,7 @@ void LrclibLyricsSource::upload(LyricData lyrics, abort_callback& abort)
 // ============
 // Tests
 // ============
-#ifdef MVTF_TESTS_ENABLED
+#if MVTF_TESTS_ENABLED
 MVTF_TEST(lrclib_equal_hashes_are_less_or_equal)
 {
     uint8_t value[32] = {0x01, 0x02, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
