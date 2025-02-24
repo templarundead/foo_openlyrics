@@ -61,7 +61,7 @@ std::vector<LyricDataRaw> LetrasSource::search(const LyricSearchParams& params, 
     const std::string url_artist = transform_artist_for_url(params.artist);
     const std::string url_title = transform_tag_for_url(params.title);
     const std::string url = "http://www.letras.com/" + url_artist + "/" + url_title;
-    LOG_INFO("Querying for lyrics from %s...", url.c_str());
+    LOG_INFO("Querying for lyrics from %s…", url.c_str());
 
     pfc::string8 content;
     try
