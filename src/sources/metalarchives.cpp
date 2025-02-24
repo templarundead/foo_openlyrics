@@ -132,7 +132,7 @@ std::vector<LyricDataRaw> MetalArchivesSource::search(const LyricSearchParams& p
     url += "?bandName=" + url_artist;
     url += "&releaseTitle=" + url_album;
     url += "&songTitle=" + url_title;
-    LOG_INFO("Querying for lyrics from %s...", url.c_str());
+    LOG_INFO("Querying for lyrics from %s…", url.c_str());
 
     pfc::string8 content;
     try
@@ -165,7 +165,7 @@ bool MetalArchivesSource::lookup(LyricDataRaw& data, abort_callback& abort)
 
     http_request::ptr request = http_client::get()->create_request("GET");
     std::string url = "https://dev.metal-archives.com/release/ajax-view-lyrics/id/" + data.lookup_id;
-    LOG_INFO("Looking up lyrics at %s...", url.c_str());
+    LOG_INFO("Looking up lyrics at %s…", url.c_str());
 
     pfc::string8 content;
     try
