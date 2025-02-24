@@ -110,7 +110,7 @@ std::vector<LyricDataRaw> QQMusicLyricsSource::parse_song_ids(cJSON* json) const
 std::vector<LyricDataRaw> QQMusicLyricsSource::search(const LyricSearchParams& params, abort_callback& abort)
 {
     std::string url = "https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg?inCharset=utf-8&outCharset=utf-8&key=" + urlencode(params.artist) + '+' + urlencode(params.title);
-    LOG_INFO("Querying for song ID from %s...", url.c_str());
+    LOG_INFO("Querying for song ID from %s…", url.c_str());
 
     pfc::string8 content;
     try
@@ -143,7 +143,7 @@ bool QQMusicLyricsSource::lookup(LyricDataRaw& data, abort_callback& abort)
 
     std::string url = "http://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?g_tk=5381&format=json&inCharset=utf-8&outCharset=utf-8&songmid=" + data.lookup_id;
     data.source_path = url;
-    LOG_INFO("Get QQMusic lyrics for song ID %s from %s...", data.lookup_id.c_str(), url.c_str());
+    LOG_INFO("Get QQMusic lyrics for song ID %s from %s…", data.lookup_id.c_str(), url.c_str());
 
     pfc::string8 content;
     try
