@@ -74,7 +74,7 @@ std::vector<LyricDataRaw> LyricsifySource::search(const LyricSearchParams& param
     const std::string url_artist = transform_tag_for_url(params.artist);
     const std::string url_title = transform_tag_for_url(params.title);
     const std::string url = "http://www.lyricsify.com/lyrics/" + url_artist + "/" + url_title;
-    LOG_INFO("Querying for lyrics from %s...", url.c_str());
+    LOG_INFO("Querying for lyrics from %s…", url.c_str());
 
     pfc::string8 content;
     try
