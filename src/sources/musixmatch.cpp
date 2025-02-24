@@ -218,7 +218,7 @@ bool MusixmatchLyricsSource::lookup(LyricDataRaw& data, abort_callback& abort)
 std::string musixmatch_get_token(abort_callback& abort)
 {
     std::string url = std::string(g_api_url) + "token.get?" + g_common_params;
-    LOG_INFO("Attempting to get Musixmatch token from %s...", url.c_str());
+    LOG_INFO("Attempting to get Musixmatch token from %s…", url.c_str());
 
     pfc::string8 content;
     try
