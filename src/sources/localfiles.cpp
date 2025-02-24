@@ -39,7 +39,7 @@ std::vector<LyricDataRaw> LocalFileSource::search(metadb_handle_ptr track, const
     {
         std::string file_path = file_path_prefix;
         file_path += (type == LyricType::Synced) ? ".lrc" : ".txt";
-        LOG_INFO("Querying for lyrics in %s...", file_path.c_str());
+        LOG_INFO("Querying for lyrics in %s…", file_path.c_str());
 
         try
         {
@@ -69,7 +69,7 @@ std::vector<LyricDataRaw> LocalFileSource::search(metadb_handle_ptr track, const
 bool LocalFileSource::lookup(LyricDataRaw& data, abort_callback& abort)
 {
     std::string& file_path = data.lookup_id;
-    LOG_INFO("Lookup local-file %s for lyrics...", file_path.c_str());
+    LOG_INFO("Lookup local-file %s for lyrics…", file_path.c_str());
 
     try
     {
@@ -120,13 +120,13 @@ static void ensure_dir_exists(const pfc::string& dir_path, abort_callback& abort
         ensure_dir_exists(parent, abort);
     }
 
-    LOG_INFO("Save directory '%s' does not exist. Creating it...", dir_path.c_str());
+    LOG_INFO("Save directory '%s' does not exist. Creating it…", dir_path.c_str());
     filesystem::g_create_directory(dir_path.c_str(), abort);
 }
 
 std::string LocalFileSource::save(metadb_handle_ptr track, const metadb_v2_rec_t& track_info, bool is_timestamped, std::string_view lyrics, bool allow_overwrite, abort_callback& abort)
 {
-    LOG_INFO("Saving lyrics to a local file...");
+    LOG_INFO("Saving lyrics to a local file…");
     std::string output_path_str = preferences::saving::filename(track, track_info);
     if(output_path_str.empty())
     {
@@ -143,7 +143,7 @@ std::string LocalFileSource::save(metadb_handle_ptr track, const metadb_v2_rec_t
         throw std::exception("Calculated file path does not contain a file leaf node");
     }
     ensure_dir_exists(pfc::io::path::getParent(output_path), abort);
-    LOG_INFO("Saving lyrics to %s...", output_path.c_str());
+    LOG_INFO("Saving lyrics to %s…", output_path.c_str());
 
     if(!allow_overwrite && filesystem::g_exists(output_path.c_str(), abort))
     {
