@@ -233,7 +233,7 @@ struct UploadChallenge
 
 static std::optional<UploadChallenge> get_challenge(abort_callback& abort)
 {
-    LOG_INFO("Requesting a challenge for LRCLIB upload...");
+    LOG_INFO("Requesting a challenge for LRCLIB upload…");
     std::string url = std::string(g_api_url) + "request-challenge";
     pfc::string8 content;
     try
@@ -431,7 +431,7 @@ static void upload_lyrics(LyricData lyrics, const UploadChallenge& challenge, ui
     char* json_str = cJSON_Print(content_root);
     cJSON_Delete(content_root);
 
-    LOG_INFO("Uploading lyrics to LRCLIB...");
+    LOG_INFO("Uploading lyrics to LRCLIB…");
     std::string url = std::string(g_api_url) + "publish";
     pfc::string8 content;
     try
