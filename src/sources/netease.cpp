@@ -147,7 +147,7 @@ std::vector<LyricDataRaw> NetEaseLyricsSource::parse_song_ids(cJSON* json)
 std::vector<LyricDataRaw> NetEaseLyricsSource::search(const LyricSearchParams& params, abort_callback& abort)
 {
     const std::string url = std::string(BASE_URL) + "/search/get?s=" + urlencode(params.artist) + '+' + urlencode(params.title) + "&type=1&offset=0&sub=false&limit=5";
-    LOG_INFO("Querying for song ID from %s...", url.c_str());
+    LOG_INFO("Querying for song ID from %s…", url.c_str());
 
     pfc::string8 content;
     try
@@ -180,7 +180,7 @@ bool NetEaseLyricsSource::lookup(LyricDataRaw& data, abort_callback& abort)
 
     std::string url = std::string(BASE_URL) + "/song/lyric?tv=-1&kv=-1&lv=-1&os=pc&id=" + data.lookup_id;
     data.source_path = url;
-    LOG_INFO("Get NetEase lyrics for song ID %s from %s...", data.lookup_id.c_str(), url.c_str());
+    LOG_INFO("Get NetEase lyrics for song ID %s from %s…", data.lookup_id.c_str(), url.c_str());
 
     pfc::string8 content;
     try
