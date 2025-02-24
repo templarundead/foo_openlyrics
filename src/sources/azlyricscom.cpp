@@ -67,7 +67,7 @@ std::vector<LyricDataRaw> AZLyricsComSource::search(const LyricSearchParams& par
     std::string url_artist = remove_chars_for_url(params.artist);
     std::string url_title = remove_chars_for_url(params.title);
     std::string url = "https://www.azlyrics.com/lyrics/" + url_artist + "/" + url_title + ".html";;
-    LOG_INFO("Querying for lyrics from %s...", url.c_str());
+    LOG_INFO("Querying for lyrics from %s…", url.c_str());
 
     pfc::string8 content;
     try

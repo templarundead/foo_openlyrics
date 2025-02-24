@@ -84,7 +84,7 @@ std::vector<LyricDataRaw> DarkLyricsSource::search(const LyricSearchParams& para
     const std::string url_album = remove_chars_for_url(params.album);
     const std::string url_title = remove_chars_for_url(params.title);
     const std::string url = "http://darklyrics.com/lyrics/" + url_artist + "/" + url_album + ".html";
-    LOG_INFO("Querying for lyrics from %s...", url.c_str());
+    LOG_INFO("Querying for lyrics from %s…", url.c_str());
 
     pfc::string8 content;
     try
