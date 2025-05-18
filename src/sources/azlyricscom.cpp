@@ -12,8 +12,14 @@ static const GUID src_guid = { 0xadf3a1ba, 0x7e88, 0x4539, { 0xaf, 0x9e, 0xa8, 0
 
 class AZLyricsComSource : public LyricSourceRemote
 {
-    const GUID& id() const final { return src_guid; }
-    std::tstring_view friendly_name() const final { return _T("AZLyrics.com"); }
+    const GUID& id() const final
+    {
+        return src_guid;
+    }
+    std::tstring_view friendly_name() const final
+    {
+        return _T("AZLyrics.com");
+    }
 
     std::vector<LyricDataRaw> search(const LyricSearchParams& params, abort_callback& abort) final;
     bool lookup(LyricDataRaw& data, abort_callback& abort) final;
@@ -40,9 +46,11 @@ static std::string remove_chars_for_url(const std::string_view input)
 
 std::vector<LyricDataRaw> AZLyricsComSource::search(const LyricSearchParams& params, abort_callback& abort)
 {
-    // NOTE: It seems that if we let the user-agent indicate a browser that is sufficiently far out of date, we get served a captcha.
-    //       Firefox has a published release schedule (https://wiki.mozilla.org/Release_Management/Calendar) and there's a new
-    //       release roughly once a month, so we can fake this being updated by just bumping our version number once a month.
+    // NOTE: It seems that if we let the user-agent indicate a browser that is sufficiently far out of date,
+    //       we get served a captcha.
+    //       Firefox has a published release schedule (https://wiki.mozilla.org/Release_Management/Calendar) and there's
+    //       a new release roughly once a month, so we can fake this being updated by just bumping our version number
+    //       once a month.
     // NOTE: Until C++20 there is no concept of a "day", "month" or "year" in std::chrono.
     //       Really what we want is the number of months since 2022-08-30 but instead we
     //       need to approximate that using hours.
@@ -54,27 +62,122 @@ std::vector<LyricDataRaw> AZLyricsComSource::search(const LyricSearchParams& par
     std::time_t useragent_epoch_time = std::mktime(&useragent_epoch);
     const auto useragent_epoch_time_point = std::chrono::system_clock::from_time_t(useragent_epoch_time);
     const auto now = std::chrono::system_clock::now();
-    const int64_t hours_since_epoch = std::chrono::duration_cast<std::chrono::hours>(now - useragent_epoch_time_point).count();
-    const int64_t hours_per_month = 24*30;
+    const int64_t hours_since_epoch = std::chrono::duration_cast<std::chrono::hours>(now - useragent_epoch_time_point)
+                                          .count();
+    const int64_t hours_per_month = 24 * 30;
     const int64_t months_since_epoch = hours_since_epoch / hours_per_month;
-    const int64_t firefox_version = 103 + months_since_epoch; // 103 is the version of Firefox that was current as of our epoch above (2022-07-30)
+
+    // 103 is the version of Firefox that was current as of our epoch above (2022-07-30)
+    const int64_t firefox_version = 103 + months_since_epoch;
     char useragent[128] = {};
-    snprintf(useragent, sizeof(useragent), "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:%lld.0) Gecko/20100101 Firefox/%lld.0", firefox_version, firefox_version);
+    snprintf(useragent,
+             sizeof(useragent),
+             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:%lld.0) Gecko/20100101 Firefox/%lld.0",
+             firefox_version,
+             firefox_version);
 
     http_request::ptr request = http_client::get()->create_request("GET");
     request->add_header("User-Agent", useragent);
 
     std::string url_artist = remove_chars_for_url(params.artist);
     std::string url_title = remove_chars_for_url(params.title);
+#include "stdafx.h"
+#include <cctype>
+
+#include "pugixml.hpp"
+
+#include "logging.h"
+#include "lyric_data.h"
+#include "lyric_source.h"
+#include "tag_util.h"
+
+static const GUID src_guid = { 0xadf3a1ba, 0x7e88, 0x4539, { 0xaf, 0x9e, 0xa8, 0xc4, 0xbc, 0x62, 0x98, 0xf1 } };
+
+class AZLyricsComSource : public LyricSourceRemote
+{
+    const GUID& id() const final
+    {
+        return src_guid;
+    }
+    std::tstring_view friendly_name() const final
+    {
+        return _T("AZLyrics.com");
+    }
+
+    std::vector<LyricDataRaw> search(const LyricSearchParams& params, abort_callback& abort) final;
+    bool lookup(LyricDataRaw& data, abort_callback& abort) final;
+};
+static const LyricSourceFactory<AZLyricsComSource> src_factory;
+
+static std::string remove_chars_for_url(const std::string_view input)
+{
+    std::string transliterated = from_tstring(normalise_utf8(to_tstring(input)));
+
+    std::string output;
+    output.reserve(transliterated.length());
+
+    for(char c : transliterated)
+    {
+        if(pfc::char_is_ascii_alphanumeric(c))
+        {
+            output += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+    }
+
+    return output;
+}
+
+std::vector<LyricDataRaw> AZLyricsComSource::search(const LyricSearchParams& params, abort_callback& abort)
+{
+    // NOTE: It seems that if we let the user-agent indicate a browser that is sufficiently far out of date,
+    //       we get served a captcha.
+    //       Firefox has a published release schedule (https://wiki.mozilla.org/Release_Management/Calendar) and there's
+    //       a new release roughly once a month, so we can fake this being updated by just bumping our version number
+    //       once a month.
+    // NOTE: Until C++20 there is no concept of a "day", "month" or "year" in std::chrono.
+    //       Really what we want is the number of months since 2022-08-30 but instead we
+    //       need to approximate that using hours.
+    std::tm useragent_epoch = {};
+    useragent_epoch.tm_year = 2022 - 1900;
+    useragent_epoch.tm_mon = 8 - 1;
+    useragent_epoch.tm_mday = 30;
+    useragent_epoch.tm_isdst = -1;
+    std::time_t useragent_epoch_time = std::mktime(&useragent_epoch);
+    const auto useragent_epoch_time_point = std::chrono::system_clock::from_time_t(useragent_epoch_time);
+    const auto now = std::chrono::system_clock::now();
+    const int64_t hours_since_epoch = std::chrono::duration_cast<std::chrono::hours>(now - useragent_epoch_time_point)
+                                          .count();
+    const int64_t hours_per_month = 24 * 30;
+    const int64_t months_since_epoch = hours_since_epoch / hours_per_month;
+
+    // 103 is the version of Firefox that was current as of our epoch above (2022-07-30)
+    const int64_t firefox_version = 103 + months_since_epoch;
+    char useragent[128] = {};
+    snprintf(useragent,
+             sizeof(useragent),
+             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:%lld.0) Gecko/20100101 Firefox/%lld.0",
+             firefox_version,
+             firefox_version);
+
+    http_request::ptr request = http_client::get()->create_request("GET");
+    request->add_header("User-Agent", useragent);
+
+    std::string url_artist = remove_chars_for_url(params.artist);
+    std::string url_title = remove_chars_for_url(params.title);
+<<<<<<< main
     std::string url = "https://www.azlyrics.com/lyrics/" + url_artist + "/" + url_title + ".html";;
     LOG_INFO("Querying for lyrics from %s…", url.c_str());
+=======
+    std::string url = "https://www.azlyrics.com/lyrics/" + url_artist + "/" + url_title + ".html";
+    LOG_INFO("Querying for lyrics from %s...", url.c_str());
+>>>>>>> upstream/main
 
     pfc::string8 content;
     try
     {
         file_ptr response_file = request->run(url.c_str(), abort);
         response_file->read_string_raw(content, abort);
-        // NOTE: We're assuming here that the response is encoded in UTF-8 
+        // NOTE: We're assuming here that the response is encoded in UTF-8
     }
     catch(const std::exception& e)
     {
@@ -101,9 +204,11 @@ std::vector<LyricDataRaw> AZLyricsComSource::search(const LyricSearchParams& par
         }
         while(target_node.type() != pugi::node_null)
         {
-            const auto attr_is_class = [](const pugi::xml_attribute& attr) { return strcmp(attr.name(), "class") == 0; };
+            const auto attr_is_class = [](const pugi::xml_attribute& attr)
+            { return strcmp(attr.name(), "class") == 0; };
             bool is_div = (strcmp(target_node.name(), "div") == 0);
-            bool has_class = std::find_if(target_node.attributes_begin(), target_node.attributes_end(), attr_is_class) != target_node.attributes_end();
+            bool has_class = std::find_if(target_node.attributes_begin(), target_node.attributes_end(), attr_is_class)
+                             != target_node.attributes_end();
             if(is_div && !has_class)
             {
                 break;
@@ -135,7 +240,7 @@ std::vector<LyricDataRaw> AZLyricsComSource::search(const LyricSearchParams& par
         result.title = params.title;
         result.type = LyricType::Unsynced;
         result.text_bytes = string_to_raw_bytes(trimmed_text);
-        return {std::move(result)};
+        return { std::move(result) };
     }
 }
 
