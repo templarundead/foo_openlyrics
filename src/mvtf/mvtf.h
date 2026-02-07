@@ -8,7 +8,9 @@
 // To compile out the test code, just define NDEBUG and enable compiler optimisations.
 // Alternatively, the MVTF_TESTS_ENABLE #define is provided so you can be 100% extra-sure.
 //
-// To run the tests, simply load the DLL and call `run_mvtf_tests`.
+// To run the tests, compile this file with MVTF_MAIN defined.
+// If you're using Visual Studio, this requires that you set the file type to "C++ Compiler".
+// Alternatively, simply load the DLL and call `run_mvtf_tests`.
 // ============================================================================
 
 #ifndef NDEBUG
@@ -54,6 +56,12 @@ typedef struct
 
 int mvtf_register_function(MVTF_TEST_FUNCTION_TYPE* ptr, const char* name);
 bool mvtf_is_running_tests();
+
+int mvtf_main(int argc, char** argv);
+
+// ============================================================================
+// Implementation
+// ============================================================================
 
 #if defined(MVTF_IMPLEMENTATION) && MVTF_TESTS_ENABLED
 #include <stdio.h> // printf
@@ -122,4 +130,62 @@ extern "C" __declspec(dllexport) int run_mvtf_tests()
     printf("Test execution completed in %.2fms: %d passed, %d failed\n", elapsed_sec * 1000.0, pass_count, fail_count);
     return return_code;
 }
+
 #endif // MVTF_IMPLEMENTATION
+
+// ============================================================================
+// Main
+// ============================================================================
+
+#if defined(MVTF_MAIN)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h> // For LoadLibraryA & GetProcAddress
+
+#include <stdio.h> // For printf
+
+typedef int (*mvtf_func)();
+int main(int argc, char** argv)
+{
+    if(argc == 1)
+    {
+        const char* program_name = argv[0];
+        printf("No test library provided to %s\n", program_name);
+        printf("Please pass in the path to a DLL containing your tests as the first argument");
+        return 1;
+    }
+
+    const char* library_path = argv[1];
+    const DWORD lib_attribs = GetFileAttributesA(library_path);
+    if(lib_attribs == INVALID_FILE_ATTRIBUTES)
+    {
+        printf("Failed to check test library path '%s'. Does that file exist?", library_path);
+        return 1;
+    }
+
+    HMODULE lib = LoadLibraryA(library_path);
+    if(lib == nullptr)
+    {
+        printf("Failed to load test library from path '%s'", library_path);
+        return 1;
+    }
+
+    const char* main_name = "run_mvtf_tests";
+    mvtf_func mvtf_main = (mvtf_func)GetProcAddress(lib, main_name);
+    if(mvtf_main == nullptr)
+    {
+        printf("Failed to load test entrypoint '%s' from test library at '%s'", main_name, library_path);
+        return 1;
+    }
+
+    int result = mvtf_main();
+    if(result == 0)
+    {
+        printf("All tests passed\n");
+    }
+    else
+    {
+        printf("Some tests failed\n");
+    }
+    return result;
+}
+#endif // MVTF_MAIN

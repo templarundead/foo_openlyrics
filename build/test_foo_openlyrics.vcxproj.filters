@@ -11,7 +11,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\src\mvtf\mvtf_main.cpp">
+    <ClCompile Include="..\src\mvtf\mvtf.h">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
