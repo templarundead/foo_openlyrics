@@ -6,31 +6,25 @@ on:
   workflow_call:
 
 jobs:
-  print-windows-sdks:
-    name: Log Windows SDKs
-    runs-on: windows-2022
-    steps:
-      - name: Print installed Windows SDK versions
-        shell: pwsh
-        continue-on-error: true
-        run: Get-ChildItem -Name "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots"
-
-  print-compiler-version:
-    name: Log MSVC compiler version
-    runs-on: windows-2022
-    steps:
-      - name: Add MSVC compiler to the PATH
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Print the active MSVC compiler version
-        shell: pwsh
-        continue-on-error: true
-        run: cl /?
-
   build-and-test-32bit:
     name: Build & test - x86
     runs-on: windows-2022
     steps:
+      - name: Log installed Windows SDK versions
+        shell: pwsh
+        continue-on-error: true
+        run: Get-ChildItem -Name "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots"
+
+      - name: Log active MSVC compiler version
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $installDir = vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $path = Join-Path $installDir 'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt'
+          $version = Get-Content -raw $path
+          $clPath = Join-Path $installDir "VC\Tools\MSVC\$($version.Trim())\bin\Hostx64\x64\cl.exe"
+          & $clPath
+
       - name: Add MSBuild to the PATH
         uses: microsoft/setup-msbuild@v2
 
