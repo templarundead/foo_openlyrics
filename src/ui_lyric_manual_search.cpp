@@ -97,10 +97,7 @@ ManualLyricSearch::~ManualLyricSearch() {}
 BOOL ManualLyricSearch::OnInitDialog(CWindow /*parent*/, LPARAM /*clientData*/)
 {
     LOG_INFO("Initializing manual search window...");
-    // TODO: We can't enable dark mode for this dialog because it adds items to a list
-    //       after initialisation and that causes failures in the darkmode code, which doesn't
-    //       fully support list UIs.
-    // m_dark.AddDialogWithControls(m_hWnd);
+    m_dark.AddDialogWithControls(m_hWnd);
     m_sort_column_index = -1;
 
     LVCOLUMN title_column = {};
