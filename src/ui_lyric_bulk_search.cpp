@@ -87,7 +87,7 @@ BOOL BulkLyricSearch::OnInitDialog(CWindow /*parent*/, LPARAM /*clientData*/)
     title_column.mask = LVCF_TEXT | LVCF_FMT | LVCF_WIDTH;
     title_column.fmt = LVCFMT_LEFT;
     title_column.pszText = _T("Title");
-    title_column.cx = 190;
+    title_column.cx = 200;
     LRESULT title_index = SendDlgItemMessage(IDC_BULKSEARCH_LIST, LVM_INSERTCOLUMN, 0, (LPARAM)&title_column);
     assert(title_index >= 0);
 
@@ -95,7 +95,7 @@ BOOL BulkLyricSearch::OnInitDialog(CWindow /*parent*/, LPARAM /*clientData*/)
     artist_column.mask = LVCF_TEXT | LVCF_FMT | LVCF_WIDTH;
     artist_column.fmt = LVCFMT_LEFT;
     artist_column.pszText = _T("Artist");
-    artist_column.cx = 144;
+    artist_column.cx = 190;
     LRESULT artist_index = SendDlgItemMessage(IDC_BULKSEARCH_LIST, LVM_INSERTCOLUMN, 1, (LPARAM)&artist_column);
     assert(artist_index >= 0);
 
@@ -103,7 +103,7 @@ BOOL BulkLyricSearch::OnInitDialog(CWindow /*parent*/, LPARAM /*clientData*/)
     status_column.mask = LVCF_TEXT | LVCF_FMT | LVCF_WIDTH;
     status_column.fmt = LVCFMT_LEFT;
     status_column.pszText = _T("Status");
-    status_column.cx = 80;
+    status_column.cx = 93;
     LRESULT status_index = SendDlgItemMessage(IDC_BULKSEARCH_LIST, LVM_INSERTCOLUMN, 2, (LPARAM)&status_column);
     assert(status_index >= 0);
 
@@ -410,4 +410,5 @@ HWND SpawnBulkLyricSearch(std::vector<metadb_handle_ptr> tracks_to_search)
     }
     return result;
 }
+
 
