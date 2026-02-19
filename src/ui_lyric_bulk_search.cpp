@@ -361,7 +361,7 @@ LRESULT BulkLyricSearch::OnTimer(WPARAM)
         //       traffic for the lyric servers in a very short time when we're searching for many tracks.
         //       When this timer expires, the callback will see that there is no child update active and
         //       will start a new search for the next track.
-        DWORD sleep_ms = 10000;
+        DWORD sleep_ms = 0;
         if(!were_remote_sources_searched)
         {
             // NOTE: If we found lyrics did not need to search a remote source in the process,
@@ -410,3 +410,4 @@ HWND SpawnBulkLyricSearch(std::vector<metadb_handle_ptr> tracks_to_search)
     }
     return result;
 }
+
