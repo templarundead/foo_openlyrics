@@ -26,6 +26,9 @@ namespace
         out += "\nChangelog:\n";
         // out += "Version " OPENLYRICS_VERSION " (" __DATE__ "):\n"
         // "\n";
+        out += "Version " OPENLYRICS_VERSION " (" __DATE__ "):\n"
+               "- Fix auto-search triggering for missing local files\n"
+               "\n";
         out += "Version 1.13 (2026-01-17):\n"
                "- Enable searching local sources with no visible panels by default\n"
                "- Add some clarifying help to the 'Exclude trailing brackets' search option\n"
