@@ -51,13 +51,13 @@ jobs:
           fetch-tags: true
 
       - name: Build debug binaries
-        run: msbuild /r /m /p:Configuration=Debug /p:Platform=x86 build\foo_openlyrics.sln
+        run: .github/scripts/build_component.ps1 -Configuration Debug -Platform x86
 
       - name: Run tests
         run: build\Debug\test_foo_openlyrics.exe build\Debug\foo_openlyrics.dll
 
       - name: Build release binaries
-        run: msbuild /r /m /p:Configuration=Release /p:Platform=x86 build\foo_openlyrics.sln
+        run: .github/scripts/build_component.ps1 -Configuration Release -Platform x86
 
   build-and-test-64bit:
     name: Build & test - x64
@@ -75,10 +75,10 @@ jobs:
           fetch-tags: true
 
       - name: Build debug binaries
-        run: msbuild /r /m /p:Configuration=Debug /p:Platform=x64 build\foo_openlyrics.sln
+        run: .github/scripts/build_component.ps1 -Configuration Debug -Platform x64
 
       - name: Run tests
         run: build\x64\Debug\test_foo_openlyrics.exe build\x64\Debug\foo_openlyrics.dll
 
       - name: Build release binaries
-        run: msbuild /r /m /p:Configuration=Release /p:Platform=x64 build\foo_openlyrics.sln
+        run: .github/scripts/build_component.ps1 -Configuration Release -Platform x64
