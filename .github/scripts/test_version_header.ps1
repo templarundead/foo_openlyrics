@@ -1,4 +1,10 @@
 $ErrorActionPreference = 'Stop'
+trap {
+    $message = ($_.Exception.Message + "`n" + $_.ScriptStackTrace).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+    Write-Host "::error::$message"
+    throw
+}
+$global:OpenLyricsVersionHeaderTestState = @{}
 $generator = Join-Path $PSScriptRoot '../../build/generate_version_header.ps1'
 $tempDirectory = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString())
 $header = Join-Path $tempDirectory 'path with spaces/openlyrics_version_generated.h'
@@ -7,12 +13,12 @@ $header = Join-Path $tempDirectory 'path with spaces/openlyrics_version_generate
 # created or changed in the checked-out repository.
 function git {
     if ($args[0] -eq 'describe') {
-        $global:LASTEXITCODE = $script:describeExitCode
-        return $script:description
+        $global:LASTEXITCODE = $global:OpenLyricsVersionHeaderTestState.describeExitCode
+        return $global:OpenLyricsVersionHeaderTestState.description
     }
     if ($args[0] -eq 'rev-parse') {
-        $global:LASTEXITCODE = $script:commitExitCode
-        return $script:commit
+        $global:LASTEXITCODE = $global:OpenLyricsVersionHeaderTestState.commitExitCode
+        return $global:OpenLyricsVersionHeaderTestState.commit
     }
     throw "Unexpected git command: $args"
 }
@@ -33,29 +39,33 @@ function Assert-GenerationFails {
 }
 
 try {
-    $script:commit = '0123456789ab'
-    $script:commitExitCode = 0
-    $script:describeExitCode = 0
-    $script:description = 'v1.13'
+    $global:OpenLyricsVersionHeaderTestState.commit = '0123456789ab'
+    $global:OpenLyricsVersionHeaderTestState.commitExitCode = 0
+    $global:OpenLyricsVersionHeaderTestState.describeExitCode = 0
+    $global:OpenLyricsVersionHeaderTestState.description = 'v1.13'
     Assert-Header '1.13'
-    $script:description = 'v1.13-2-g0123456'
+    $global:OpenLyricsVersionHeaderTestState.description = 'v1.13-2-g0123456'
     Assert-Header '1.13-2-g0123456'
 
-    $script:describeExitCode = 128
-    $script:description = $null
+    $global:OpenLyricsVersionHeaderTestState.describeExitCode = 128
+    $global:OpenLyricsVersionHeaderTestState.description = $null
     Assert-Header '0.0-alpha-g0123456789ab'
 
-    $script:describeExitCode = 0
-    $script:description = 'invalid-tag'
+    $global:OpenLyricsVersionHeaderTestState.describeExitCode = 0
+    $global:OpenLyricsVersionHeaderTestState.description = 'invalid-tag'
     Assert-GenerationFails
-    $script:describeExitCode = 128
-    $script:description = $null
-    $script:commitExitCode = 128
-    $script:commit = $null
+    $global:OpenLyricsVersionHeaderTestState.describeExitCode = 128
+    $global:OpenLyricsVersionHeaderTestState.description = $null
+    $global:OpenLyricsVersionHeaderTestState.commitExitCode = 128
+    $global:OpenLyricsVersionHeaderTestState.commit = $null
     Assert-GenerationFails
     Write-Output 'Passed version-header generation tests (tagged, untagged, and invalid inputs).'
 } finally {
+    Remove-Variable -Name OpenLyricsVersionHeaderTestState -Scope Global
     if (Test-Path -LiteralPath $tempDirectory) {
         Remove-Item -LiteralPath $tempDirectory -Recurse -Force
     }
 }
+# The final negative case deliberately sets a failing native-command status.
+# Do not let GitHub's pwsh epilogue treat that expected failure as a job failure.
+$global:LASTEXITCODE = 0
