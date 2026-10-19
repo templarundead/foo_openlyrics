@@ -13,3 +13,6 @@ Release/
 releases/
 metrics/metrics_data/
 metrics/.venv
+
+# Python regression tests and CI packaging helpers
+__pycache__/

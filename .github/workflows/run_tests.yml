@@ -1,8 +1,11 @@
 name: Run tests
 on:
   push:
-    branches: main
+    branches:
+      - main
+      - 'arena/**'
   pull_request:
+  workflow_dispatch:
   workflow_call:
 
 jobs:
@@ -15,6 +18,8 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
+      - name: Test component packaging
+        run: python -m unittest discover -s tests -p test_package_component.py -v
       - name: Test version header generation
         shell: pwsh
         run: .github/scripts/test_version_header.ps1
@@ -62,6 +67,16 @@ jobs:
       - name: Build release binaries
         run: .github/scripts/build_component.ps1 -Configuration Release -Platform x86
 
+      - name: Upload x86 Release binaries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: foo_openlyrics-release-x86
+          path: |
+            build/Release/foo_openlyrics.dll
+            build/Release/foo_openlyrics.pdb
+          if-no-files-found: error
+          retention-days: 7
+
   build-and-test-64bit:
     name: Build & test - x64
     runs-on: windows-2022
@@ -85,3 +100,62 @@ jobs:
 
       - name: Build release binaries
         run: .github/scripts/build_component.ps1 -Configuration Release -Platform x64
+
+      - name: Upload x64 Release binaries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: foo_openlyrics-release-x64
+          path: |
+            build/x64/Release/foo_openlyrics.dll
+            build/x64/Release/foo_openlyrics.pdb
+          if-no-files-found: error
+          retention-days: 7
+
+
+  package-component:
+    name: Package installable component
+    needs: [portable-unicode-tests, build-and-test-32bit, build-and-test-64bit]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Checkout packaging script
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Download x86 Release binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: foo_openlyrics-release-x86
+          path: ${{ runner.temp }}/openlyrics-input/x86
+
+      - name: Download x64 Release binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: foo_openlyrics-release-x64
+          path: ${{ runner.temp }}/openlyrics-input/x64
+
+      - name: Package component and matching debug symbols
+        run: |
+          python .github/scripts/package_component.py \
+            --input-dir "$RUNNER_TEMP/openlyrics-input" \
+            --output-dir "$RUNNER_TEMP/openlyrics-artifacts" \
+            --revision "${{ github.sha }}"
+
+      - name: Upload installable component
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: foo_openlyrics-component
+          path: ${{ runner.temp }}/openlyrics-artifacts/*.fb2k-component
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0  # The component is already a ZIP archive.
+
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: foo_openlyrics-debug-symbols
+          path: ${{ runner.temp }}/openlyrics-artifacts/*-with_debug_symbols.zip
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
