@@ -7,6 +7,7 @@
 #include "http.h"
 #include "logging.h"
 #include "lyric_source.h"
+#include "source_test_support.h"
 
 static const GUID src_guid = { 0xa7ac869e, 0xa867, 0x49e6, { 0x97, 0x9e, 0x7b, 0x61, 0x58, 0x84, 0x21, 0x17 } };
 
@@ -74,7 +75,7 @@ std::vector<LyricDataRaw> MetalArchivesSource::parse_song_ids(cJSON* json) const
         const int song_arr_len = cJSON_GetArraySize(song_arr);
         if(song_arr_len != 5)
         {
-            throw new std::runtime_error("Unexpected number of fields, the page format may have changed");
+            throw std::runtime_error("Unexpected number of fields, the page format may have changed");
         }
 
         const cJSON* artist_item = cJSON_GetArrayItem(song_arr, 0);
@@ -85,7 +86,7 @@ std::vector<LyricDataRaw> MetalArchivesSource::parse_song_ids(cJSON* json) const
            || (album_item->type != cJSON_String) || (title_item == nullptr) || (title_item->type != cJSON_String)
            || (lyrics_item == nullptr) || (lyrics_item->type != cJSON_String))
         {
-            throw new std::runtime_error("Unexpected data-field format, the page format may have changed");
+            throw std::runtime_error("Unexpected data-field format, the page format may have changed");
         }
 
         const pugi::xml_document artist_doc = load_html(artist_item->valuestring);
@@ -105,13 +106,13 @@ std::vector<LyricDataRaw> MetalArchivesSource::parse_song_ids(cJSON* json) const
         std::string_view result_id = id_doc.first_child().attribute("id").value();
         if(!result_id.empty() && !result_id.starts_with(id_prefix))
         {
-            throw new std::runtime_error("Unrecognised lyric ID format, the page format may have changed");
+            throw std::runtime_error("Unrecognised lyric ID format, the page format may have changed");
         }
         result_id = result_id.substr(strlen(id_prefix));
 
         if(result_artist.empty() || result_album.empty())
         {
-            throw new std::runtime_error("Failed to parse metadata component XML, the page format may have changed");
+            throw std::runtime_error("Failed to parse metadata component XML, the page format may have changed");
         }
 
         LyricDataRaw data = {};
@@ -185,3 +186,20 @@ bool MetalArchivesSource::lookup(LyricDataRaw& data, abort_callback& abort)
     data.source_path = std::move(url);
     return !data.text_bytes.empty();
 }
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(MetalArchivesSource, metalarchives)
+SOURCE_LOOKUP_FAILURE_TESTS(MetalArchivesSource, metalarchives, "(lyrics not available)")
+MVTF_TEST(metalarchives_fetches_search_metadata_and_looks_up_lyrics)
+{
+    LyricSourceFactory<MetalArchivesSource> factory;
+    source_tests::search_lookup_success(
+        factory.get_static_instance(),
+        R"fixture({"aaData":[["<a>Artist</a>","<a>Album</a>","Full-length","Song","<a id=\"lyricsLink_42\">Lyrics</a>"]]})fixture",
+        R"fixture(Line one<br>Line two)fixture",
+        "Line one\r\nLine two",
+        1,
+        "GET",
+        mvtf_error_count);
+}
+#endif

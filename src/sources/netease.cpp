@@ -5,6 +5,8 @@
 #include "logging.h"
 #include "lyric_data.h"
 #include "lyric_source.h"
+#include "source_io.h"
+#include "source_test_support.h"
 #include "tag_util.h"
 
 static const GUID src_guid = { 0xaac13215, 0xe32e, 0x4667, { 0xac, 0xd7, 0x1f, 0xd, 0xbd, 0x84, 0x27, 0xe4 } };
@@ -32,7 +34,7 @@ static const char* BASE_URL = "https://music.163.com/api";
 
 static http_request::ptr make_post_request()
 {
-    http_request::ptr request = http_client::get()->create_request("POST");
+    http_request::ptr request = source_io::create_request("POST");
     request->add_header("Referer", "https://music.163.com");
     request->add_header("Cookie", "appver=2.0.2");
     request->add_header("charset", "utf-8");
@@ -223,3 +225,20 @@ bool NetEaseLyricsSource::lookup(LyricDataRaw& data, abort_callback& abort)
 
     return success;
 }
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(NetEaseLyricsSource, netease)
+SOURCE_LOOKUP_FAILURE_TESTS(NetEaseLyricsSource, netease, "{}")
+MVTF_TEST(netease_fetches_search_metadata_and_looks_up_lyrics)
+{
+    LyricSourceFactory<NetEaseLyricsSource> factory;
+    source_tests::search_lookup_success(
+        factory.get_static_instance(),
+        R"fixture({"result":{"songs":[{"id":42,"name":"Song","artists":[{"name":"Artist"}],"album":{"name":"Album"},"duration":222000}]}})fixture",
+        R"fixture({"lrc":{"lyric":"[00:01.00]Line one\n[00:02.00]Line two"}})fixture",
+        "[00:01.00]Line one\n[00:02.00]Line two",
+        1,
+        "POST",
+        mvtf_error_count);
+}
+#endif

@@ -5,6 +5,8 @@
 #include "logging.h"
 #include "lyric_data.h"
 #include "lyric_source.h"
+#include "source_io.h"
+#include "source_test_support.h"
 
 static const GUID src_guid = { 0x4b0b5722, 0x3a84, 0x4b8e, { 0x82, 0x7a, 0x26, 0xb9, 0xea, 0xb3, 0xb4, 0xe8 } };
 
@@ -29,7 +31,7 @@ static const LyricSourceFactory<QQMusicLyricsSource> src_factory;
 
 static http_request::ptr make_get_request()
 {
-    http_request::ptr request = http_client::get()->create_request("GET");
+    http_request::ptr request = source_io::create_request("GET");
     request->add_header("Referer", "http://y.qq.com/portal/player.html");
     return request;
 }
@@ -186,3 +188,20 @@ bool QQMusicLyricsSource::lookup(LyricDataRaw& data, abort_callback& abort)
 
     return success;
 }
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(QQMusicLyricsSource, qqmusic)
+SOURCE_LOOKUP_FAILURE_TESTS(QQMusicLyricsSource, qqmusic, "{}")
+MVTF_TEST(qqmusic_fetches_search_metadata_and_looks_up_lyrics)
+{
+    LyricSourceFactory<QQMusicLyricsSource> factory;
+    source_tests::search_lookup_success(
+        factory.get_static_instance(),
+        R"fixture({"data":{"song":{"itemlist":[{"mid":"42","name":"Song","singer":"Artist"}]}}})fixture",
+        R"fixture({"lyric":"WzAwOjAxLjAwXUxpbmUgb25lClswMDowMi4wMF1MaW5lIHR3bw=="})fixture",
+        "[00:01.00]Line one\n[00:02.00]Line two",
+        1,
+        "GET",
+        mvtf_error_count);
+}
+#endif

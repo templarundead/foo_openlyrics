@@ -6,6 +6,8 @@
 #include "logging.h"
 #include "lyric_source.h"
 #include "mvtf/mvtf.h"
+#include "source_io.h"
+#include "source_test_support.h"
 #include "tag_util.h"
 
 static const GUID src_guid = { 0x5153d050, 0x387d, 0x47ec, { 0x93, 0x50, 0xd5, 0x3, 0xf2, 0x7b, 0x6c, 0x65 } };
@@ -65,7 +67,7 @@ static bool is_text_placeholder(std::string_view lyrics_text, const LyricSearchP
 
 std::vector<LyricDataRaw> SonglyricsSource::search(const LyricSearchParams& params, abort_callback& abort)
 {
-    auto request = http_client::get()->create_request("GET");
+    auto request = source_io::create_request("GET");
 
     std::string url = "https://songlyrics.com/";
     url += remove_chars_for_url(params.artist);
@@ -105,7 +107,7 @@ std::vector<LyricDataRaw> SonglyricsSource::search(const LyricSearchParams& para
 
     if(lyric_text.empty())
     {
-        throw new std::runtime_error("Failed to parse lyrics, the page format may have changed");
+        throw std::runtime_error("Failed to parse lyrics, the page format may have changed");
     }
     else
     {
@@ -161,5 +163,19 @@ MVTF_TEST(songlyrics_the_start_of_regular_lyrics_text_is_not_detected_as_a_place
     const std::string_view text = "Sum 41\nMiscellaneous\nHell Song\n...";
     LyricSearchParams params("Sum 41", "Does This Look Infected?", "Hell Song", {});
     ASSERT(!is_text_placeholder(text, params));
+}
+#endif
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(SonglyricsSource, songlyrics)
+MVTF_TEST(songlyrics_fetches_and_parses_fixture)
+{
+    LyricSourceFactory<SonglyricsSource> factory;
+    source_tests::search_success(factory.get_static_instance(),
+                                 R"fixture(<p id="songLyricsDiv">Line &amp; one<br>Line two</p>)fixture",
+                                 "Line & one\r\nLine two",
+                                 LyricType::Unsynced,
+                                 "/artist/song-lyrics",
+                                 mvtf_error_count);
 }
 #endif

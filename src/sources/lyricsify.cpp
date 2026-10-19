@@ -7,6 +7,8 @@
 #include "lyric_source.h"
 #include "mvtf/mvtf.h"
 #include "parsers.h"
+#include "source_io.h"
+#include "source_test_support.h"
 #include "tag_util.h"
 
 static const GUID src_guid = { 0x79959787, 0xd75e, 0x4643, { 0xa2, 0x43, 0x6a, 0xdd, 0x5d, 0xe7, 0x42, 0x5c } };
@@ -72,7 +74,7 @@ std::string LyricsifySource::extract_lyrics_from_page(pfc::string8 page_content)
 
 std::vector<LyricDataRaw> LyricsifySource::search(const LyricSearchParams& params, abort_callback& abort)
 {
-    http_request::ptr request = http_client::get()->create_request("GET");
+    http_request::ptr request = source_io::create_request("GET");
 
     // Without a User-Agent we sometimes only get partial lyrics back
     request->add_header("User-Agent",
@@ -99,7 +101,7 @@ std::vector<LyricDataRaw> LyricsifySource::search(const LyricSearchParams& param
     const std::string lyric_text = extract_lyrics_from_page(content);
     if(lyric_text.empty())
     {
-        throw new std::runtime_error("Failed to parse lyrics, the page format may have changed");
+        throw std::runtime_error("Failed to parse lyrics, the page format may have changed");
     }
     else
     {
@@ -157,5 +159,20 @@ MVTF_TEST(lyrisify_extracts_lyrics_from_page_content)
     LyricSourceFactory<LyricsifySource> factory;
     const std::string output = factory.get_static_instance().extract_lyrics_from_page(input);
     ASSERT(output == "line1\r\nline2");
+}
+#endif
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(LyricsifySource, lyricsify)
+MVTF_TEST(lyricsify_fetches_and_parses_fixture)
+{
+    LyricSourceFactory<LyricsifySource> factory;
+    source_tests::search_success(
+        factory.get_static_instance(),
+        R"fixture(<div id="lyrics_42_details">[00:01.00]Line &amp; one<br>[00:02.00]Line two</div>)fixture",
+        "[00:01.00]Line & one\r\n[00:02.00]Line two",
+        LyricType::Synced,
+        "/artist/song",
+        mvtf_error_count);
 }
 #endif

@@ -6,6 +6,8 @@
 #include "lyric_data.h"
 #include "lyric_source.h"
 #include "preferences.h"
+#include "source_io.h"
+#include "source_test_support.h"
 
 static const GUID src_guid = { 0xf94ba31a, 0x7b33, 0x49e4, { 0x81, 0x9b, 0x0, 0xc, 0x36, 0x44, 0x29, 0xcd } };
 
@@ -46,7 +48,7 @@ std::vector<LyricDataRaw> MusixmatchLyricsSource::get_song_ids(const LyricSearch
     // That currently lives at:
     // https://github.com/ESLyric/scripts/blob/82ea7351c8e0cb333fda1ae36b6917e68b6613c1/searcher/musixmatch.js
 
-    const std::string_view apikey = preferences::searching::musixmatch_api_key();
+    const std::string_view apikey = source_io::musixmatch_token();
     std::string url = std::string(g_api_url) + "track.search?" + g_common_params + "&subtitle_format=lrc";
     url += "&q_artist=" + urlencode(params.artist);
     url += "&q_album=" + urlencode(params.album);
@@ -58,7 +60,7 @@ std::vector<LyricDataRaw> MusixmatchLyricsSource::get_song_ids(const LyricSearch
     pfc::string8 content;
     try
     {
-        http_request::ptr request = http_client::get()->create_request("GET");
+        http_request::ptr request = source_io::create_request("GET");
 
         // NOTE: Without adding the AWSELB and AWSELBCORS headers, we get a 301 (permanent redirect back)
         //       with a header instructing us to set those cookies to the given hash.
@@ -179,7 +181,7 @@ bool MusixmatchLyricsSource::get_lyrics(LyricDataRaw& data,
 {
     assert(data.source_id == id());
 
-    const std::string_view apikey = preferences::searching::musixmatch_api_key();
+    const std::string_view apikey = source_io::musixmatch_token();
     std::string url = std::string(g_api_url) + method + "?" + g_common_params
                       + "&commontrack_id=" + std::to_string(track_id) + "&usertoken=";
     LOG_INFO("Get Musixmatch lyrics from %s", url.c_str());
@@ -189,7 +191,7 @@ bool MusixmatchLyricsSource::get_lyrics(LyricDataRaw& data,
     pfc::string8 content;
     try
     {
-        http_request::ptr request = http_client::get()->create_request("GET");
+        http_request::ptr request = source_io::create_request("GET");
         request->add_header("cookie",
                             "AWSELBCORS=0; AWSELB=0"); // NOTE: See the comment on the cookie in the track ID query
 
@@ -239,7 +241,7 @@ bool MusixmatchLyricsSource::get_synced_lyrics(LyricDataRaw& data, int64_t track
 
 std::vector<LyricDataRaw> MusixmatchLyricsSource::search(const LyricSearchParams& params, abort_callback& abort)
 {
-    if(preferences::searching::musixmatch_api_key().empty())
+    if(source_io::musixmatch_token().empty())
     {
         // An API key is required.
         // Skip the search if we don't have one so we don't accidentally spam their servers with obviously-bad requests.
@@ -275,7 +277,7 @@ std::string musixmatch_get_token(abort_callback& abort)
     pfc::string8 content;
     try
     {
-        http_request::ptr request = http_client::get()->create_request("GET");
+        http_request::ptr request = source_io::create_request("GET");
         request->add_header("cookie",
                             "AWSELBCORS=0; AWSELB=0"); // NOTE: See the comment on the cookie in the track ID query
 
@@ -325,3 +327,43 @@ std::string musixmatch_get_token(abort_callback& abort)
     cJSON_Delete(json);
     return result;
 }
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(MusixmatchLyricsSource, musixmatch)
+SOURCE_LOOKUP_FAILURE_TESTS(MusixmatchLyricsSource, musixmatch, "{}")
+MVTF_TEST(musixmatch_fetches_search_metadata_and_looks_up_lyrics)
+{
+    LyricSourceFactory<MusixmatchLyricsSource> factory;
+    source_tests::search_lookup_success(
+        factory.get_static_instance(),
+        R"fixture({"message":{"body":{"track_list":[{"track":{"artist_name":"Artist","album_name":"Album","track_name":"Song","has_lyrics":1,"has_subtitles":1,"commontrack_id":42,"track_length":222}}]}}})fixture",
+        R"fixture({"message":{"body":{"subtitle":{"subtitle_body":"[00:01.00]Line one\n[00:02.00]Line two"},"lyrics":{"lyrics_body":"Line one\nLine two"}}}})fixture",
+        "Line one\nLine two",
+        2,
+        "GET",
+        mvtf_error_count,
+        "[00:01.00]Line one\n[00:02.00]Line two");
+}
+#endif
+#if MVTF_TESTS_ENABLED
+MVTF_TEST(musixmatch_without_token_does_not_send_requests)
+{
+    source_io::FixtureIO io;
+    io.token.clear();
+    LyricSourceFactory<MusixmatchLyricsSource> factory;
+    LyricSourceRemote& source = factory.get_static_instance();
+    abort_callback_dummy abort;
+    CHECK(source.search(source_tests::params(), abort).empty());
+    CHECK(io.requests.empty());
+}
+
+MVTF_TEST(musixmatch_token_response_is_parsed_and_malformed_response_rejected)
+{
+    source_io::FixtureIO io;
+    io.responses = { { R"fixture({"message":{"body":{"user_token":"synthetic-test-token"}}})fixture" }, { "{}" } };
+    abort_callback_dummy abort;
+    CHECK(musixmatch_get_token(abort) == "synthetic-test-token");
+    CHECK(musixmatch_get_token(abort).empty());
+    CHECK(io.requests.size() == 2);
+}
+#endif

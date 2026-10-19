@@ -6,6 +6,23 @@ on:
   workflow_call:
 
 jobs:
+  portable-unicode-tests:
+    name: Unicode formatting regression tests
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Test version header generation
+        shell: pwsh
+        run: .github/scripts/test_version_header.ps1
+      - name: Build and run Unicode tests
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined tests/test_unicode_text_style.cpp -o "$RUNNER_TEMP/test_unicode_text_style"
+          "$RUNNER_TEMP/test_unicode_text_style"
+
   build-and-test-32bit:
     name: Build & test - x86
     runs-on: windows-2022
@@ -37,13 +54,13 @@ jobs:
           fetch-tags: true
 
       - name: Build debug binaries
-        run: msbuild /r /m /p:Configuration=Debug /p:Platform=x86 build\foo_openlyrics.sln
+        run: .github/scripts/build_component.ps1 -Configuration Debug -Platform x86
 
       - name: Run tests
-        run: build\Debug\test_foo_openlyrics.exe build\Debug\foo_openlyrics.dll
+        run: .github/scripts/test_component.ps1 -Platform x86
 
       - name: Build release binaries
-        run: msbuild /r /m /p:Configuration=Release /p:Platform=x86 build\foo_openlyrics.sln
+        run: .github/scripts/build_component.ps1 -Configuration Release -Platform x86
 
   build-and-test-64bit:
     name: Build & test - x64
@@ -61,10 +78,10 @@ jobs:
           fetch-tags: true
 
       - name: Build debug binaries
-        run: msbuild /r /m /p:Configuration=Debug /p:Platform=x64 build\foo_openlyrics.sln
+        run: .github/scripts/build_component.ps1 -Configuration Debug -Platform x64
 
       - name: Run tests
-        run: build\x64\Debug\test_foo_openlyrics.exe build\x64\Debug\foo_openlyrics.dll
+        run: .github/scripts/test_component.ps1 -Platform x64
 
       - name: Build release binaries
-        run: msbuild /r /m /p:Configuration=Release /p:Platform=x64 build\foo_openlyrics.sln
+        run: .github/scripts/build_component.ps1 -Configuration Release -Platform x64

@@ -3,6 +3,7 @@
 #include "logging.h"
 #include "lyric_source.h"
 #include "parsers.h"
+#include "source_test_support.h"
 #include "tag_util.h"
 
 static const GUID src_guid = { 0x3fb0f715, 0xa097, 0x493a, { 0x94, 0x4e, 0xdb, 0x48, 0x66, 0x8, 0x86, 0x78 } };
@@ -118,14 +119,11 @@ std::string ID3TagLyricSource::save(metadb_handle_ptr track,
         return localfiles_source->save(track, track_info, is_timestamped, lyric_view, allow_overwrite, abort);
     }
 
-    std::string tag_name;
-    if(is_timestamped)
+    const std::string tag_name = preferences::saving::save_tag(track, track_info, is_timestamped);
+    if(tag_name.empty())
     {
-        tag_name = preferences::saving::timestamped_tag();
-    }
-    else
-    {
-        tag_name = preferences::saving::untimed_tag();
+        LOG_WARN("Lyrics were not saved because the save-tag title format is invalid or empty");
+        return {};
     }
     LOG_INFO("Saving lyrics to ID3 tag %s...", tag_name.c_str());
 
@@ -291,3 +289,57 @@ std::tstring ID3TagLyricSource::get_file_path(metadb_handle_ptr track, const Lyr
         return _T("");
     }
 }
+
+#if MVTF_TESTS_ENABLED
+MVTF_TEST(metadata_tags_reads_multiple_fields_and_classifies_lyrics)
+{
+    file_info_impl info;
+    info.meta_set("artist", "Artist");
+    info.meta_set("title", "Song");
+    info.meta_set("LYRICS", "Plain lyrics");
+    info.meta_set("UNSYNCED LYRICS", "[00:01.00]Synced lyrics");
+    info.meta_set("UNRELATED", "Not lyrics");
+    const auto record = source_tests::track_info(info);
+    LyricSourceFactory<ID3TagLyricSource> factory;
+    LyricSourceBase& source = factory.get_static_instance();
+    abort_callback_dummy abort;
+    const auto results = source.search(nullptr, record, abort);
+    ASSERT(results.size() == 2);
+    CHECK(results[0].source_id == src_guid);
+    CHECK(results[0].source_path == "UNSYNCED LYRICS");
+    CHECK(results[0].type == LyricType::Synced);
+    CHECK(source_tests::text(results[0]) == "[00:01.00]Synced lyrics");
+    CHECK(results[1].source_path == "LYRICS");
+    CHECK(results[1].type == LyricType::Unsynced);
+    CHECK(source_tests::text(results[1]) == "Plain lyrics");
+    for(const auto& result : results)
+    {
+        CHECK(result.artist == "Artist");
+        CHECK(result.title == "Song");
+    }
+}
+
+MVTF_TEST(metadata_tags_missing_info_and_empty_tags_return_no_lyrics)
+{
+    LyricSourceFactory<ID3TagLyricSource> factory;
+    LyricSourceBase& source = factory.get_static_instance();
+    abort_callback_dummy abort;
+    CHECK(source.search(nullptr, {}, abort).empty());
+    file_info_impl info;
+    info.meta_set("LYRICS", "");
+    CHECK(source.search(nullptr, source_tests::track_info(info), abort).empty());
+}
+
+MVTF_TEST(metadata_tags_concatenates_multiple_values_without_losing_utf8)
+{
+    file_info_impl info;
+    info.meta_add("LYRICS", "First\n");
+    info.meta_add("LYRICS", "\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82");
+    LyricSourceFactory<ID3TagLyricSource> factory;
+    LyricSourceBase& source = factory.get_static_instance();
+    abort_callback_dummy abort;
+    const auto results = source.search(nullptr, source_tests::track_info(info), abort);
+    ASSERT(results.size() == 1);
+    CHECK(source_tests::text(results[0]) == "First\n\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82");
+}
+#endif

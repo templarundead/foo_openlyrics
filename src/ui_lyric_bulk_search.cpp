@@ -4,7 +4,9 @@
 #include "foobar2000/SDK/coreDarkMode.h"
 #include "foobar2000/helpers/atl-misc.h"
 #include "resource.h"
+#include <uxtheme.h>
 #pragma warning(pop)
+#pragma comment(lib, "uxtheme.lib")
 
 #include "logging.h"
 #include "lyric_io.h"
@@ -16,7 +18,7 @@
 class BulkLyricSearch;
 static BulkLyricSearch* g_active_bulk_search_panel = nullptr;
 
-class BulkLyricSearch : public CDialogImpl<BulkLyricSearch>
+class BulkLyricSearch : public CDialogImpl<BulkLyricSearch>, private ui_config_callback_impl
 {
 public:
     // Dialog resource ID
@@ -51,6 +53,18 @@ private:
     LRESULT OnTimer(WPARAM);
     void OnCancel(UINT btn_id, int notify_code, CWindow btn);
 
+    void ui_fonts_changed() override {}
+    void ui_colors_changed() override
+    {
+        update_list_theme();
+    }
+    void update_list_theme();
+    static LRESULT CALLBACK ListSubclassProc(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
+
+    bool m_list_dark = false;
+    COLORREF m_list_background = 0;
+    COLORREF m_list_text = 0;
+
     void update_status_text();
     void add_tracks_to_ui(const std::vector<TrackAndInfo>& new_tracks);
 
@@ -78,10 +92,14 @@ BOOL BulkLyricSearch::OnInitDialog(CWindow /*parent*/, LPARAM /*clientData*/)
     LOG_INFO("Initializing bulk search window...");
     metrics::log_used_bulk_search();
 
-    // TODO: We can't enable dark mode for this dialog because it adds items to a list
-    //       after initialisation and that causes failures in the darkmode code, which doesn't
-    //       fully support list UIs.
-    // m_dark.AddDialogWithControls(m_hWnd);
+    // Do not use AddDialogWithControls: the SDK replaces SysListView32 with a
+    // CListControl that does not support all of the LVM_* updates used below.
+    // Theme the native list separately, retaining its HWND and message semantics.
+    m_dark.AddDialog(m_hWnd);
+    m_dark.AddCtrlAuto(GetDlgItem(IDC_BULKSEARCH_STATUS));
+    m_dark.AddCtrlAuto(GetDlgItem(IDC_BULKSEARCH_CLOSE));
+    SetWindowSubclass(GetDlgItem(IDC_BULKSEARCH_LIST), ListSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+    update_list_theme();
 
     LVCOLUMN title_column = {};
     title_column.mask = LVCF_TEXT | LVCF_FMT | LVCF_WIDTH;
@@ -120,6 +138,84 @@ BOOL BulkLyricSearch::OnInitDialog(CWindow /*parent*/, LPARAM /*clientData*/)
 
     ShowWindow(SW_SHOW);
     return TRUE;
+}
+
+void BulkLyricSearch::update_list_theme()
+{
+    if(m_hWnd == nullptr) return;
+    HWND list = GetDlgItem(IDC_BULKSEARCH_LIST);
+    if(list == nullptr) return;
+    m_list_dark = ui_config_manager::g_is_dark_mode();
+    const auto config = ui_config_manager::tryGet();
+    m_list_background = config.is_valid() ? config->getSysColor(COLOR_WINDOW) : GetSysColor(COLOR_WINDOW);
+    m_list_text = config.is_valid() ? config->getSysColor(COLOR_WINDOWTEXT) : GetSysColor(COLOR_WINDOWTEXT);
+    ListView_SetBkColor(list, m_list_background);
+    ListView_SetTextBkColor(list, m_list_background);
+    ListView_SetTextColor(list, m_list_text);
+    SetWindowTheme(list, m_list_dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+    // Header items are custom-drawn in dark mode; retain native drawing in light mode.
+    HWND header = ListView_GetHeader(list);
+    SetWindowTheme(header, m_list_dark ? L"" : L"Explorer", nullptr);
+    // Progress bars are not handled by older coreDarkMode implementations.
+    HWND progress = GetDlgItem(IDC_BULKSEARCH_PROGRESS);
+    SetWindowTheme(progress, m_list_dark ? L"" : L"Explorer", nullptr);
+    ::SendMessage(progress, PBM_SETBKCOLOR, 0, m_list_background);
+    const COLORREF bar = config.is_valid() ? config->getSysColor(COLOR_HIGHLIGHT) : GetSysColor(COLOR_HIGHLIGHT);
+    ::SendMessage(progress, PBM_SETBARCOLOR, 0, bar);
+    ::RedrawWindow(progress, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE);
+    ::RedrawWindow(list, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+}
+
+LRESULT CALLBACK
+BulkLyricSearch::ListSubclassProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR subclass_id, DWORD_PTR data)
+{
+    auto* self = reinterpret_cast<BulkLyricSearch*>(data);
+    if(msg == WM_NOTIFY && self->m_list_dark)
+    {
+        const auto* notification = reinterpret_cast<NMHDR*>(lp);
+        if(notification->hwndFrom == ListView_GetHeader(wnd) && notification->code == NM_CUSTOMDRAW)
+        {
+            auto* draw = reinterpret_cast<NMCUSTOMDRAW*>(lp);
+            if(draw->dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW | CDRF_NOTIFYPOSTPAINT;
+            if(draw->dwDrawStage == CDDS_POSTPAINT)
+            {
+                RECT empty = {};
+                ::GetClientRect(notification->hwndFrom, &empty);
+                const int count = Header_GetItemCount(notification->hwndFrom);
+                if(count > 0)
+                {
+                    RECT last = {};
+                    Header_GetItemRect(notification->hwndFrom, count - 1, &last);
+                    empty.left = last.right;
+                }
+                SetDCBrushColor(draw->hdc, self->m_list_background);
+                FillRect(draw->hdc, &empty, reinterpret_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+                return CDRF_DODEFAULT;
+            }
+            if(draw->dwDrawStage == CDDS_ITEMPREPAINT)
+            {
+                SetDCBrushColor(draw->hdc, self->m_list_background);
+                FillRect(draw->hdc, &draw->rc, reinterpret_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+                SetTextColor(draw->hdc, self->m_list_text);
+                SetBkMode(draw->hdc, TRANSPARENT);
+                TCHAR text[256] = {};
+                HDITEM item = {};
+                item.mask = HDI_TEXT | HDI_FORMAT;
+                item.pszText = text;
+                item.cchTextMax = _countof(text);
+                Header_GetItem(notification->hwndFrom, static_cast<int>(draw->dwItemSpec), &item);
+                RECT rect = draw->rc;
+                rect.left += 6;
+                rect.right -= 6;
+                UINT flags = DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX;
+                flags |= (item.fmt & HDF_RIGHT) ? DT_RIGHT : ((item.fmt & HDF_CENTER) ? DT_CENTER : DT_LEFT);
+                DrawText(draw->hdc, text, -1, &rect, flags);
+                return CDRF_SKIPDEFAULT;
+            }
+        }
+    }
+    if(msg == WM_NCDESTROY) RemoveWindowSubclass(wnd, ListSubclassProc, subclass_id);
+    return DefSubclassProc(wnd, msg, wp, lp);
 }
 
 void BulkLyricSearch::OnDestroyDialog()
@@ -304,12 +400,11 @@ LRESULT BulkLyricSearch::OnTimer(WPARAM)
         lyrics = io::process_available_lyric_update(
             { update.get_result(), update.get_track(), update.get_track_info(), update.get_type() });
     }
-    m_child_search.reset();
-
     if(lyrics.has_value())
     {
         lyric_metadata_log_retrieved(update.get_track_info(), lyrics.value());
     }
+    m_child_search.reset();
 
     SendDlgItemMessage(IDC_BULKSEARCH_PROGRESS, PBM_STEPIT, 0, 0);
     if(m_next_search_index < int(m_tracks_to_search.size()))

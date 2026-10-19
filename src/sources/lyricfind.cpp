@@ -8,6 +8,8 @@
 #include "logging.h"
 #include "lyric_source.h"
 #include "mvtf/mvtf.h"
+#include "source_io.h"
+#include "source_test_support.h"
 
 static const GUID src_guid = { 0xa7735112, 0x5ef6, 0x4f53, { 0xa7, 0xe5, 0x5b, 0xa5, 0xb5, 0x60, 0xa7, 0xa6 } };
 
@@ -195,7 +197,7 @@ std::vector<LyricDataRaw> LyricfindSource::search(const LyricSearchParams& param
     pfc::string8 content;
     try
     {
-        auto request = http_client::get()->create_request("GET");
+        auto request = source_io::create_request("GET");
 
         // Without these we get 403s back
         request->add_header("User-Agent",
@@ -215,7 +217,7 @@ std::vector<LyricDataRaw> LyricfindSource::search(const LyricSearchParams& param
     std::optional<LyricDataRaw> result = extract_lyrics_from_page(url, content);
     if(!result.has_value())
     {
-        throw new std::runtime_error("Failed to parse lyrics, the page format may have changed");
+        throw std::runtime_error("Failed to parse lyrics, the page format may have changed");
     }
 
     LOG_INFO("Successfully retrieved lyrics from %s", url.c_str());
@@ -253,5 +255,20 @@ MVTF_TEST(lyricfind_durationparse_parses_valid_strings)
     const std::optional<int> output = try_parse_duration_seconds(input);
     ASSERT(output.has_value());
     ASSERT(output.value() == 236);
+}
+#endif
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(LyricfindSource, lyricfind)
+MVTF_TEST(lyricfind_fetches_and_parses_fixture)
+{
+    LyricSourceFactory<LyricfindSource> factory;
+    source_tests::search_success(
+        factory.get_static_instance(),
+        R"fixture(<script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"songData":{"track":{"artist":{"name":"Artist"},"title":"Song","duration":"3:42","lyrics":"Line one\nLine two"}}}}}</script>)fixture",
+        "Line one\nLine two",
+        LyricType::Unsynced,
+        "/artist-song",
+        mvtf_error_count);
 }
 #endif

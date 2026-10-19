@@ -7,6 +7,8 @@
 #include "lyric_source.h"
 #include "mvtf/mvtf.h"
 #include "parsers.h"
+#include "source_io.h"
+#include "source_test_support.h"
 #include "tag_util.h"
 
 static const GUID src_guid = { 0xe6b4d51b, 0x6016, 0x494f, { 0x80, 0xb2, 0xf5, 0xff, 0xb4, 0x88, 0xdd, 0x91 } };
@@ -62,7 +64,7 @@ static std::string transform_artist_for_url(const std::string_view artist)
 
 std::vector<LyricDataRaw> LetrasSource::search(const LyricSearchParams& params, abort_callback& abort)
 {
-    http_request::ptr request = http_client::get()->create_request("GET");
+    http_request::ptr request = source_io::create_request("GET");
 
     const std::string url_artist = transform_artist_for_url(params.artist);
     const std::string url_title = transform_tag_for_url(params.title);
@@ -114,7 +116,7 @@ std::vector<LyricDataRaw> LetrasSource::search(const LyricSearchParams& params, 
 
     if(result.text_bytes.empty() || result.artist.empty() || result.title.empty())
     {
-        throw new std::runtime_error("Failed to parse lyrics, the page format may have changed");
+        throw std::runtime_error("Failed to parse lyrics, the page format may have changed");
     }
     else
     {
@@ -153,5 +155,20 @@ MVTF_TEST(letras_prefix_the_removed_from_artist)
 {
     const std::string result = transform_artist_for_url("The All-American Rejects");
     ASSERT(result == "all-american-rejects");
+}
+#endif
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(LetrasSource, letras)
+MVTF_TEST(letras_fetches_and_parses_fixture)
+{
+    LyricSourceFactory<LetrasSource> factory;
+    source_tests::search_success(
+        factory.get_static_instance(),
+        R"fixture(<div id="js-lyricHeader"><div class="title-content"><h1>Song</h1><h2>Artist</h2></div></div><div class="lyric-original">Line &amp; one<br>Line two</div>)fixture",
+        "Line & one\r\nLine two",
+        LyricType::Unsynced,
+        "/artist/song",
+        mvtf_error_count);
 }
 #endif

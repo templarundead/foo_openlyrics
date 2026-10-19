@@ -12,18 +12,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run clang-format and clang-tidy
+      - name: Run clang-format
         uses: cpp-linter/cpp-linter-action@77c390c5ba9c947ebc185a3e49cc754f1558abb5  # v2.18.0
         id: linter
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           style: 'file'  # Use .clang-format config file
+          version: '19'  # Match the formatter used for the project's style.
+          # This is a formatting job, not a configured MSVC static-analysis job.
+          # Running tidy without a compilation database misparses our SDK headers.
+          tidy-checks: '-*'
 
       - name: Fail if clang reports any issues
         if: ${{ steps.linter.outputs.checks-failed > 0 }}
         run: |
-          echo "All user-visible changes must include an appropriate addition to the changelog"
+          echo "clang-format found formatting issues; format the changed C/C++ files with clang-format 19."
           exit 1
 
   check-changelist-modified:

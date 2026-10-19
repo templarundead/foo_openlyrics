@@ -6,6 +6,8 @@
 #include "http.h"
 #include "logging.h"
 #include "openlyrics_version.h" // Defines OPENLYRICS_VERSION
+#include "sources/source_io.h"
+#include <stdexcept>
 
 static void on_init()
 {
@@ -26,7 +28,7 @@ FB2K_RUN_ON_QUIT(on_quit);
 
 bool http::Result::is_success() const
 {
-    return completed_successfully && (response_status < 300);
+    return completed_successfully && (response_status >= 200) && (response_status < 300);
 }
 
 static size_t write_callback(void* contents, size_t size, size_t nmemb, std::string* userp)
@@ -38,6 +40,14 @@ static size_t write_callback(void* contents, size_t size, size_t nmemb, std::str
 
 http::Result http::get_http2(const std::string& url, abort_callback& abort)
 {
+#if MVTF_TESTS_ENABLED
+    if(auto* io = source_io::fixture())
+    {
+        const auto response = io->fetch({ "GET", url, {} }, abort);
+        return { response.transport_success, response.status, response.body, {} };
+    }
+    if(mvtf_is_running_tests()) throw std::runtime_error("Missing HTTP/2 fixture");
+#endif
     CURLM* multi = curl_multi_init();
     if(multi == nullptr)
     {
@@ -136,3 +146,18 @@ http::Result http::get_http2(const std::string& url, abort_callback& abort)
     curl_multi_cleanup(multi);
     return result;
 }
+
+#if MVTF_TESTS_ENABLED
+MVTF_TEST(http_success_requires_completed_transport_and_2xx_status)
+{
+    for(long status : { 0L, 100L, 199L, 300L, 404L, 503L })
+    {
+        CHECK(!(http::Result { true, status, {}, {} }.is_success()));
+    }
+    for(long status : { 200L, 201L, 204L, 299L })
+    {
+        CHECK((http::Result { true, status, {}, {} }.is_success()));
+        CHECK(!(http::Result { false, status, {}, {} }.is_success()));
+    }
+}
+#endif

@@ -13,6 +13,7 @@
 #include "metrics.h"
 #include "parsers.h"
 #include "ui_hooks.h"
+#include "unicode_text_style.h"
 #include "win32_util.h"
 
 class LyricEditor : public CDialogImpl<LyricEditor>, private play_callback_impl_base
@@ -32,6 +33,7 @@ public:
     MSG_WM_DESTROY(OnDestroyDialog)
     MSG_WM_CLOSE(OnClose)
     COMMAND_HANDLER_EX(IDC_LYRIC_TEXT, EN_CHANGE, OnEditChange)
+    COMMAND_HANDLER_EX(IDC_LYRIC_EDIT_FORMAT, BN_CLICKED, OnFormatSelection)
     COMMAND_HANDLER_EX(IDC_LYRIC_EDIT_BACK5, BN_CLICKED, OnBackwardSeek)
     COMMAND_HANDLER_EX(IDC_LYRIC_EDIT_FWD5, BN_CLICKED, OnForwardSeek)
     COMMAND_HANDLER_EX(IDC_LYRIC_EDIT_PLAY, BN_CLICKED, OnPlaybackToggle)
@@ -49,6 +51,7 @@ private:
     void OnDestroyDialog();
     void OnClose();
     void OnEditChange(UINT, int, CWindow);
+    void OnFormatSelection(UINT, int, CWindow);
     void OnBackwardSeek(UINT btn_id, int notify_code, CWindow btn);
     void OnForwardSeek(UINT btn_id, int notify_code, CWindow btn);
     void OnPlaybackToggle(UINT btn_id, int notify_code, CWindow btn);
@@ -202,6 +205,42 @@ void LyricEditor::OnDestroyDialog()
 void LyricEditor::OnClose()
 {
     DestroyWindow();
+}
+
+void LyricEditor::OnFormatSelection(UINT, int, CWindow)
+{
+    DWORD start = 0;
+    DWORD end = 0;
+    SendDlgItemMessage(IDC_LYRIC_TEXT, EM_GETSEL, reinterpret_cast<WPARAM>(&start), reinterpret_cast<LPARAM>(&end));
+    if(start == end) return;
+
+    static const TCHAR* names[] = { _T("bold"),       _T("italic"),   _T("boldItalic"),   _T("script"),
+                                    _T("scriptBold"), _T("fraktur"),  _T("doubleStruck"), _T("frakturBold"),
+                                    _T("sans"),       _T("sansBold"), _T("sansItalic"),   _T("sansBoldItalic"),
+                                    _T("monospace") };
+    static_assert(_countof(names) == unicode_text_style::alphabets.size());
+    CMenu menu;
+    menu.CreatePopupMenu();
+    for(UINT i = 0; i < _countof(names); ++i)
+        menu.AppendMenu(MF_STRING, i + 1, names[i]);
+    RECT button = {};
+    GetDlgItem(IDC_LYRIC_EDIT_FORMAT).GetWindowRect(&button);
+    const UINT choice = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTALIGN,
+                                            button.left,
+                                            button.bottom,
+                                            m_hWnd);
+    if(choice == 0 || choice > _countof(names)) return;
+
+    const std::tstring contents = GetEditorContents();
+    if(end > contents.size()) return;
+    const std::u16string selection(contents.begin() + start, contents.begin() + end);
+    const auto formatted = unicode_text_style::format(selection, static_cast<unicode_text_style::Style>(choice - 1));
+    const std::tstring replacement(formatted.begin(), formatted.end());
+    // EM_REPLACESEL preserves the rest of the document and records one undoable edit.
+    SendDlgItemMessage(IDC_LYRIC_TEXT, EM_SETSEL, start, end);
+    SendDlgItemMessage(IDC_LYRIC_TEXT, EM_REPLACESEL, TRUE, reinterpret_cast<LPARAM>(replacement.c_str()));
+    SendDlgItemMessage(IDC_LYRIC_TEXT, EM_SETSEL, start, start + replacement.size());
+    GotoDlgCtrl(GetDlgItem(IDC_LYRIC_TEXT));
 }
 
 void LyricEditor::OnEditChange(UINT, int, CWindow)
