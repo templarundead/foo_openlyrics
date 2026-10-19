@@ -16,11 +16,15 @@ $buildExitCode = $LASTEXITCODE
 
 if ($buildExitCode -ne 0) {
     $errors = $buildOutput | ForEach-Object { "$_" } |
-        Where-Object { $_ -match '\b(?:(?:fatal )?error|warning)(?: [A-Z]+\d+)?\s*:' } |
+        Where-Object {
+            $_ -match '\b(?:fatal )?error(?: [A-Z]+\d+)?\s*:' -or
+            ($_ -match '\bwarning [A-Z]+\d+:' -and $_ -match '\\foo_openlyrics\\src\\')
+        } |
         Select-Object -Unique
     foreach ($message in $errors) {
         $escaped = $message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-        Write-Host "::error::$escaped"
+        $level = if ($message -match '\bwarning [A-Z]+\d+:') { 'warning' } else { 'error' }
+        Write-Host "::${level}::$escaped"
     }
 }
 exit $buildExitCode

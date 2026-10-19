@@ -97,6 +97,12 @@ create its dialogs. Verify these integration points in foobar2000:
 ## Validation in the implementation sandbox
 
 The portable executable was built with GCC and AddressSanitizer/UBSan and passed.
-Native compilation was attempted, but `msbuild` is not installed in this Linux
-sandbox. Consequently the DLL build, native MVTF source suite, title-format host
-integration, and visual acceptance checks still require Windows validation.
+MSBuild is not installed in the Linux implementation sandbox; Windows compilation
+and native MVTF execution are verified by the x86/x64 GitHub Actions jobs instead.
+Title-format host integration and visual acceptance checks still require manual
+validation in foobar2000.
+
+The portable CI job also tests version-header generation with mocked Git output:
+release tags, commits after a release tag, an untagged fork, invalid tags, and a
+missing HEAD. Untagged builds use `0.0-alpha-g<commit>`; official v-prefixed tags
+retain their existing version strings.
