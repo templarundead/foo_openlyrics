@@ -27,6 +27,7 @@ namespace
         // out += "Version " OPENLYRICS_VERSION " (" __DATE__ "):\n"
         // "\n";
         out += "Version " OPENLYRICS_VERSION " (" __DATE__ "):\n"
+               "- Provide installable CI artifacts and matching debug symbols\n"
                "- Support title formatting for metadata save-tag names (#405)\n"
                "- Add native dark mode to the bulk lyric search window\n"
                "- Add 13 Unicode text styles to the lyric editor\n"

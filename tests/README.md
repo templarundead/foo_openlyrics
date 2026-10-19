@@ -106,3 +106,36 @@ The portable CI job also tests version-header generation with mocked Git output:
 release tags, commits after a release tag, an untagged fork, invalid tags, and a
 missing HEAD. Untagged builds use `0.0-alpha-g<commit>`; official v-prefixed tags
 retain their existing version strings.
+
+
+## Downloadable Actions artifacts
+
+`Run tests` builds and packages artifacts for pushes to `main` and `arena/**`,
+pull requests, manual runs (**Run workflow**, after the workflow is present on
+the default branch), and calls from the existing tagged-release workflow.
+The packaging job runs only after both Windows jobs and the portable tests pass;
+it uses the tested Release outputs without rebuilding or publishing a release.
+
+Open the completed workflow run and scroll to **Artifacts**:
+
+- **foo_openlyrics-component**: extract the downloaded Actions ZIP to obtain
+  `foo_openlyrics-<commit>.fb2k-component`, then install that file in foobar2000.
+  It contains the x86 DLL at the root and the x64 DLL under `x64/`.
+- **foo_openlyrics-debug-symbols**: an archive containing matching Release DLLs
+  and PDBs for both architectures, separated into `x86/` and `x64/`.
+- **foo_openlyrics-release-x86** / **foo_openlyrics-release-x64**: the individual
+  Release DLL/PDB outputs (retained for 7 days).
+
+The installable component and combined symbols are retained for 14 days. GitHub
+requires sign-in to download workflow artifacts. Existing tagged GitHub Releases
+are unchanged. Every package filename includes the first 12 characters of the
+built commit hash (the merge commit for `pull_request` runs).
+
+Packaging can be tested without Windows or compiled binaries:
+
+```sh
+python -m unittest discover -s tests -p test_package_component.py -v
+```
+
+These tests verify archive layout and bytes, matching DLL/PDB placement, invalid
+revision rejection, and fail-fast handling of missing or empty build outputs.
