@@ -3,6 +3,8 @@
 #include "logging.h"
 #include "lyric_source.h"
 #include "preferences.h"
+#include "source_io.h"
+#include "source_test_support.h"
 #include "tag_util.h"
 #include "win32_util.h"
 
@@ -44,7 +46,7 @@ std::vector<LyricDataRaw> LocalFileSource::search(metadb_handle_ptr track,
                                                   const metadb_v2_rec_t& track_info,
                                                   abort_callback& abort)
 {
-    std::string file_path_prefix = preferences::saving::filename(track, track_info);
+    std::string file_path_prefix = source_io::local_search_path(track, track_info);
 
     if(file_path_prefix.empty())
     {
@@ -61,7 +63,7 @@ std::vector<LyricDataRaw> LocalFileSource::search(metadb_handle_ptr track,
 
         try
         {
-            if(filesystem::g_exists(file_path.c_str(), abort))
+            if(source_io::exists(file_path.c_str(), abort))
             {
                 LyricDataRaw result = {};
                 result.source_id = id();
@@ -91,8 +93,7 @@ bool LocalFileSource::lookup(LyricDataRaw& data, abort_callback& abort)
 
     try
     {
-        file_ptr file;
-        filesystem::g_open_read(file, file_path.c_str(), abort);
+        file_ptr file = source_io::open_read(file_path.c_str(), abort);
 
         // NOTE: We need to use `read_till_eof` instead of `read_string_raw` because otherwise on some
         //       encodings it will see a null byte mid-way through and stop reading, dropping the rest
@@ -235,3 +236,60 @@ std::tstring LocalFileSource::get_file_path(metadb_handle_ptr /*track*/, const L
         return _T("");
     }
 }
+
+#if MVTF_TESTS_ENABLED
+MVTF_TEST(localfiles_search_and_lookup_preserve_lrc_and_text_bytes)
+{
+    source_io::FixtureIO io;
+    io.files = { { "fixture/track.lrc", "[00:01.00]Line one\r\n[00:02.00]Line two" },
+                 { "fixture/track.txt", "Plain lyrics\nSecond line" } };
+    file_info_impl info;
+    info.meta_set("artist", "Artist");
+    info.meta_set("title", "Song");
+    LyricSourceFactory<LocalFileSource> factory;
+    LyricSourceBase& source = factory.get_static_instance();
+    abort_callback_dummy abort;
+    auto results = source.search(nullptr, source_tests::track_info(info), abort);
+    ASSERT(results.size() == 2);
+    for(size_t i = 0; i < results.size(); ++i)
+    {
+        CHECK(results[i].source_id == src_guid);
+        CHECK(results[i].artist == "Artist");
+        CHECK(results[i].title == "Song");
+        CHECK(results[i].source_path == io.files[i].first);
+        CHECK(results[i].lookup_id == io.files[i].first);
+        ASSERT(source.lookup(results[i], abort));
+        CHECK(source_tests::text(results[i]) == io.files[i].second);
+    }
+    CHECK(results[0].type == LyricType::Synced);
+    CHECK(results[1].type == LyricType::Unsynced);
+}
+
+MVTF_TEST(localfiles_lookup_does_not_truncate_utf16_at_embedded_nulls)
+{
+    source_io::FixtureIO io;
+    const char bytes[] = { char(0xFF), char(0xFE), 'A', 0, '\n', 0, 'B', 0 };
+    io.files = { { "fixture/track.txt", std::string(bytes, sizeof(bytes)) } };
+    LyricSourceFactory<LocalFileSource> factory;
+    LyricSourceBase& source = factory.get_static_instance();
+    abort_callback_dummy abort;
+    LyricDataRaw data = {};
+    data.lookup_id = io.files[0].first;
+    ASSERT(source.lookup(data, abort));
+    CHECK(source_tests::text(data) == io.files[0].second);
+}
+
+MVTF_TEST(localfiles_missing_files_and_empty_path_return_no_results)
+{
+    source_io::FixtureIO io;
+    LyricSourceFactory<LocalFileSource> factory;
+    LyricSourceBase& source = factory.get_static_instance();
+    abort_callback_dummy abort;
+    CHECK(source.search(nullptr, {}, abort).empty());
+    LyricDataRaw data = {};
+    data.lookup_id = "fixture/missing.txt";
+    CHECK(!source.lookup(data, abort));
+    io.path_prefix.clear();
+    CHECK(source.search(nullptr, {}, abort).empty());
+}
+#endif

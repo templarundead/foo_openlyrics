@@ -27,6 +27,11 @@ namespace
         // out += "Version " OPENLYRICS_VERSION " (" __DATE__ "):\n"
         // "\n";
         out += "Version " OPENLYRICS_VERSION " (" __DATE__ "):\n"
+               "- Support title formatting for metadata save-tag names (#405)\n"
+               "- Add native dark mode to the bulk lyric search window\n"
+               "- Add 13 Unicode text styles to the lyric editor\n"
+               "- Add offline fetch/parse regression tests for all lyric sources\n"
+               "- Fix a bulk search result lifetime error\n"
                "- Better support non-latin whitespace characters for word wrapping\n"
                "- Fix auto-search triggering for missing local files\n"
                "- Fix Musixmatch always returning an invalid result\n"

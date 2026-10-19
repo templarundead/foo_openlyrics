@@ -7,7 +7,10 @@
 #pragma warning(pop)
 
 #include "config/config_auto.h"
+#include "logging.h"
+#include "mvtf/mvtf.h"
 #include "preferences.h"
+#include "tag_util.h"
 
 // clang-format off: GUIDs should be one line
 static const GUID GUID_PREFERENCES_PAGE_SRC_METATAGS = { 0x23c180eb, 0x1f8f, 0x4cf1, { 0x90, 0x2e, 0x31, 0x56, 0x2f, 0xa9, 0x4f, 0xf5 } };
@@ -62,14 +65,38 @@ std::vector<std::string> preferences::searching::tags()
     return result;
 }
 
-std::string_view preferences::saving::untimed_tag()
+static std::string validated_save_tag(std::string_view formatted)
 {
-    return { cfg_save_tag_untimed.get_ptr(), cfg_save_tag_untimed.get_length() };
+    const std::string_view tag = trim_surrounding_whitespace(formatted);
+    // Never pass an empty field name or invalid tag-name characters to the metadata writer.
+    if(tag.empty()
+       || std::any_of(tag.begin(),
+                      tag.end(),
+                      [](unsigned char c) { return c < 0x20 || c == 0x7F || c == '=' || c == ';'; }))
+    {
+        return {};
+    }
+    return std::string(tag);
 }
 
-std::string_view preferences::saving::timestamped_tag()
+std::string preferences::saving::save_tag(metadb_handle_ptr track, const metadb_v2_rec_t& track_info, bool timestamped)
 {
-    return { cfg_save_tag_timestamped.get_ptr(), cfg_save_tag_timestamped.get_length() };
+    const char* format = timestamped ? cfg_save_tag_timestamped.c_str() : cfg_save_tag_untimed.c_str();
+    titleformat_object::ptr script;
+    if(!titleformat_compiler::get()->compile(script, format))
+    {
+        LOG_WARN("Failed to compile save tag format: %s", format);
+        return {};
+    }
+
+    pfc::string8 formatted;
+    track->formatTitle_v2_(track_info, nullptr, formatted, script, nullptr);
+    std::string tag = validated_save_tag({ formatted.c_str(), formatted.get_length() });
+    if(tag.empty())
+    {
+        LOG_WARN("Save tag format evaluated to an empty or invalid tag name");
+    }
+    return tag;
 }
 
 class PreferencesSrcMetatags : public CDialogImpl<PreferencesSrcMetatags>, public auto_preferences_page_instance
@@ -97,12 +124,19 @@ public:
     COMMAND_HANDLER_EX(IDC_SAVE_TAG_SYNCED, EN_CHANGE, OnUIChange)
     COMMAND_HANDLER_EX(IDC_SAVE_TAG_UNSYNCED, EN_CHANGE, OnUIChange)
     COMMAND_HANDLER_EX(IDC_SAVE_TAG_EXPLAIN, BN_CLICKED, OnTagExplain)
+    NOTIFY_HANDLER_EX(IDC_SAVE_SYNTAX_HELP, NM_CLICK, OnSyntaxHelp)
+    NOTIFY_HANDLER_EX(IDC_SAVE_SYNTAX_HELP, NM_RETURN, OnSyntaxHelp)
     END_MSG_MAP()
 
 private:
     BOOL OnInitDialog(CWindow, LPARAM);
     void OnUIChange(UINT, int, CWindow);
     void OnTagExplain(UINT, int, CWindow);
+    LRESULT OnSyntaxHelp(NMHDR*)
+    {
+        standard_commands::main_titleformat_help();
+        return 0;
+    }
 
     fb2k::CCoreDarkModeHooks m_dark;
 };
@@ -126,6 +160,9 @@ BOOL PreferencesSrcMetatags::OnInitDialog(CWindow, LPARAM)
 {
     m_dark.AddDialogWithControls(m_hWnd);
 
+    // Title-format scripts are often much longer than literal field names.
+    SendDlgItemMessage(IDC_SAVE_TAG_UNSYNCED, EM_SETLIMITTEXT, 32767, 0);
+    SendDlgItemMessage(IDC_SAVE_TAG_SYNCED, EM_SETLIMITTEXT, 32767, 0);
     init_auto_preferences();
 
     return FALSE;
@@ -145,7 +182,14 @@ void PreferencesSrcMetatags::OnTagExplain(UINT, int, CWindow)
                 "more compatible with other media players that might want to read lyric info.\n\nOpenLyrics will "
                 "correctly load both synced and unsynced lyrics regardless of the tag in which they are "
                 "stored.\n\nUnless you have a specific reason for wanting to use a different tag to store synced "
-                "lyrics, leaving it as the 'UNSYNCED LYRICS' is strongly recommended.";
+                "lyrics, leaving it as 'UNSYNCED LYRICS' is recommended.\n\n"
+                "Both save fields accept foobar2000 title formatting, evaluated for the track being saved. "
+                "For example:\n"
+                "$if($stricmp($ext(%path%),mp3),UNSYNCED LYRICS,"
+                "$if($stricmp($ext(%path%),m4a),LYRICS,UNSYNCEDLYRICS))\n\n"
+                "The result must be a single, non-empty tag name. Invalid scripts or empty results prevent saving. "
+                "The search-tags list remains a semicolon-separated list of literal tag names; include every "
+                "tag that your save scripts can produce.";
     query.buttons = popup_message_v3::buttonOK;
     query.defButton = popup_message_v3::buttonOK;
     query.icon = popup_message_v3::iconInformation;
@@ -169,3 +213,22 @@ public:
     }
 };
 static preferences_page_factory_t<PreferencesSrcMetatagsImpl> g_preferences_page_factory;
+
+#if MVTF_TESTS_ENABLED
+MVTF_TEST(metadata_save_tag_accepts_literal_and_evaluated_names)
+{
+    CHECK(validated_save_tag("UNSYNCED LYRICS") == "UNSYNCED LYRICS");
+    CHECK(validated_save_tag("LYRICS") == "LYRICS");
+    CHECK(validated_save_tag("  UNSYNCEDLYRICS  ") == "UNSYNCEDLYRICS");
+}
+
+MVTF_TEST(metadata_save_tag_rejects_empty_and_invalid_evaluation_results)
+{
+    CHECK(validated_save_tag("").empty());
+    CHECK(validated_save_tag(" \r\n ").empty());
+    CHECK(validated_save_tag("LYRICS;UNSYNCED LYRICS").empty());
+    CHECK(validated_save_tag("LYRICS=TEXT").empty());
+    CHECK(validated_save_tag("LYR\nICS").empty());
+    CHECK(validated_save_tag(std::string_view("LYR\0ICS", 7)).empty());
+}
+#endif

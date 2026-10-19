@@ -6,6 +6,8 @@
 #include "logging.h"
 #include "lyric_source.h"
 #include "mvtf/mvtf.h"
+#include "source_io.h"
+#include "source_test_support.h"
 #include "tag_util.h"
 
 static const GUID src_guid = { 0x6f0de3a9, 0xc824, 0x429f, { 0x8e, 0x26, 0x6c, 0xe2, 0x7f, 0xab, 0xd8, 0x7b } };
@@ -70,7 +72,7 @@ std::vector<LyricDataRaw> BandcampSource::search(const LyricSearchParams& params
     std::vector<LyricDataRaw> result;
     for(int page_index = 1; page_index < 8; page_index++)
     {
-        http_request::ptr request = http_client::get()->create_request("GET");
+        http_request::ptr request = source_io::create_request("GET");
 
         const std::string url_artist = remove_artist_url_chars(params.artist);
         const std::string url_title = remove_title_url_chars(params.title);
@@ -151,5 +153,19 @@ MVTF_TEST(bandcamp_title_url_removes_special_chars_and_replaces_spaces_with_dash
 {
     const std::string result = remove_title_url_chars("hello world!");
     ASSERT(result == "hello-world");
+}
+#endif
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(BandcampSource, bandcamp)
+MVTF_TEST(bandcamp_fetches_and_parses_fixture)
+{
+    LyricSourceFactory<BandcampSource> factory;
+    source_tests::search_success(factory.get_static_instance(),
+                                 R"fixture(<div class="lyricsText">Line &amp; one<br>Line two</div>)fixture",
+                                 "Line & one\r\nLine two",
+                                 LyricType::Unsynced,
+                                 "artist.bandcamp.com/track/song",
+                                 mvtf_error_count);
 }
 #endif

@@ -131,8 +131,8 @@ namespace preferences
 
         std::string filename(metadb_handle_ptr track, const metadb_v2_rec_t& track_info);
 
-        std::string_view untimed_tag();
-        std::string_view timestamped_tag();
+        // Evaluate against the track being saved (which need not be the playing track).
+        std::string save_tag(metadb_handle_ptr track, const metadb_v2_rec_t& track_info, bool timestamped);
 
         bool merge_equivalent_lrc_lines();
 

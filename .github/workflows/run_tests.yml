@@ -6,6 +6,20 @@ on:
   workflow_call:
 
 jobs:
+  portable-unicode-tests:
+    name: Unicode formatting regression tests
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Build and run Unicode tests
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined tests/test_unicode_text_style.cpp -o "$RUNNER_TEMP/test_unicode_text_style"
+          "$RUNNER_TEMP/test_unicode_text_style"
+
   build-and-test-32bit:
     name: Build & test - x86
     runs-on: windows-2022

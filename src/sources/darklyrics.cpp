@@ -6,6 +6,8 @@
 #include "logging.h"
 #include "lyric_source.h"
 #include "mvtf/mvtf.h"
+#include "source_io.h"
+#include "source_test_support.h"
 #include "tag_util.h"
 
 static const GUID src_guid = { 0x5901c128, 0xc67f, 0x4eec, { 0x8f, 0x10, 0x47, 0x5d, 0x12, 0x52, 0x89, 0xe9 } };
@@ -84,7 +86,7 @@ void DarkLyricsSource::add_subsection_text_to_string(std::string& output, pugi::
 
 std::vector<LyricDataRaw> DarkLyricsSource::search(const LyricSearchParams& params, abort_callback& abort)
 {
-    http_request::ptr request = http_client::get()->create_request("GET");
+    http_request::ptr request = source_io::create_request("GET");
 
     const std::string url_artist = remove_chars_for_url(params.artist);
     const std::string url_album = remove_chars_for_url(params.album);
@@ -140,7 +142,7 @@ std::vector<LyricDataRaw> DarkLyricsSource::search(const LyricSearchParams& para
 
     if(lyric_text.empty())
     {
-        throw new std::runtime_error("Failed to parse lyrics, the page format may have changed");
+        throw std::runtime_error("Failed to parse lyrics, the page format may have changed");
     }
     else
     {
@@ -174,5 +176,20 @@ MVTF_TEST(darklyrics_known_bad_chars_removed_from_url)
 {
     const std::string result = remove_chars_for_url("?!@#asd!@#qwe[]'_zxc-+><");
     ASSERT(result == "asdqwezxc");
+}
+#endif
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(DarkLyricsSource, darklyrics)
+MVTF_TEST(darklyrics_fetches_and_parses_fixture)
+{
+    LyricSourceFactory<DarkLyricsSource> factory;
+    source_tests::search_success(
+        factory.get_static_instance(),
+        R"fixture(<div class="lyrics"><h3><a name="1">1. Song</a></h3>Line &amp; one<br>Line two<h3><a name="2">2. Other</a></h3>Do not include</div>)fixture",
+        "Line & one\r\nLine two",
+        LyricType::Unsynced,
+        "/lyrics/artist/album.html",
+        mvtf_error_count);
 }
 #endif

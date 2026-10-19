@@ -64,6 +64,7 @@ int mvtf_main(int argc, char** argv);
 // ============================================================================
 
 #if defined(MVTF_IMPLEMENTATION) && MVTF_TESTS_ENABLED
+#include <exception> // Test exception diagnostics
 #include <stdio.h> // printf
 #include <stdlib.h> // Realloc
 
@@ -104,7 +105,20 @@ extern "C" __declspec(dllexport) int run_mvtf_tests()
     for(int i = 0; i < mvtf_test_count; i++)
     {
         int error_count = 0;
-        mvtf_test_functions[i].ptr(&error_count);
+        try
+        {
+            mvtf_test_functions[i].ptr(&error_count);
+        }
+        catch(const std::exception& e)
+        {
+            printf("Unhandled exception in %s: %s\n", mvtf_test_functions[i].name, e.what());
+            ++error_count;
+        }
+        catch(...)
+        {
+            printf("Unhandled non-standard exception in %s\n", mvtf_test_functions[i].name);
+            ++error_count;
+        }
 
         const char* status_str = "";
         if(error_count == 0)

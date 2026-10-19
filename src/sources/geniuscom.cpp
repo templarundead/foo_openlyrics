@@ -5,6 +5,8 @@
 
 #include "logging.h"
 #include "lyric_source.h"
+#include "source_io.h"
+#include "source_test_support.h"
 
 static const GUID src_guid = { 0xb4cf497f, 0xd2c, 0x45ff, { 0xaa, 0x46, 0xf1, 0x45, 0xa7, 0xf, 0x90, 0x14 } };
 
@@ -13,8 +15,8 @@ constexpr int RESULT_LIMIT = 3;
 // The Genius API client access key used by MusicBee.
 // For some unknown reason when we request song data using *this* API key, we get lyrics,
 // but when we request song data using our own API key, we don't always get lyrics.
-constexpr auto API_KEY_HEADER =
-    "Authorization: Bearer ZTejoT_ojOEasIkT9WrMBhBQOz6eYKK5QULCMECmOhvwqjRZ6WbpamFe3geHnvp3";
+constexpr auto API_KEY_HEADER = "Authorization: Bearer "
+                                "ZTejoT_ojOEasIkT9WrMBhBQOz6eYKK5QULCMECmOhvwqjRZ6WbpamFe3geHnvp3";
 
 class GeniusComSource : public LyricSourceRemote
 {
@@ -64,7 +66,7 @@ static std::string remove_chars_for_url(const std::string_view input)
 
 std::vector<LyricDataRaw> GeniusComSource::search(const LyricSearchParams& params, abort_callback& abort)
 {
-    auto request = http_client::get()->create_request("GET");
+    auto request = source_io::create_request("GET");
     request->add_header(API_KEY_HEADER);
 
     std::string url = "https://api.genius.com/search?q=";
@@ -147,7 +149,7 @@ std::vector<LyricDataRaw> GeniusComSource::search(const LyricSearchParams& param
 
 bool GeniusComSource::lookup(LyricDataRaw& data, abort_callback& abort)
 {
-    auto request = http_client::get()->create_request("GET");
+    auto request = source_io::create_request("GET");
     request->add_header(API_KEY_HEADER);
 
     const std::string url = std::format("https://api.genius.com{}?text_format=plain", data.lookup_id);
@@ -197,3 +199,20 @@ bool GeniusComSource::lookup(LyricDataRaw& data, abort_callback& abort)
     data.type = LyricType::Unsynced;
     return true;
 }
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(GeniusComSource, geniuscom)
+SOURCE_LOOKUP_FAILURE_TESTS(GeniusComSource, geniuscom, "{}")
+MVTF_TEST(geniuscom_fetches_search_metadata_and_looks_up_lyrics)
+{
+    LyricSourceFactory<GeniusComSource> factory;
+    source_tests::search_lookup_success(
+        factory.get_static_instance(),
+        R"fixture({"response":{"hits":[{"result":{"api_path":"/songs/42","title":"Song","artist_names":"Artist"}}]}})fixture",
+        R"fixture({"response":{"song":{"lyrics":{"plain":"Line one\nLine two"}}}})fixture",
+        "Line one\nLine two",
+        1,
+        "GET",
+        mvtf_error_count);
+}
+#endif

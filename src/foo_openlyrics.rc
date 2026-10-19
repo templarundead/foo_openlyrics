@@ -168,10 +168,11 @@ BEGIN
     EDITTEXT        IDC_SEARCH_TAGS,7,95,318,14,ES_AUTOHSCROLL
     LTEXT           "Unsynced lyrics:",IDC_STATIC,31,19,52,8
     LTEXT           "Synced lyrics:",IDC_STATIC,37,37,44,8
-    EDITTEXT        IDC_SAVE_TAG_UNSYNCED,89,16,82,14,ES_AUTOHSCROLL
-    EDITTEXT        IDC_SAVE_TAG_SYNCED,89,36,82,14,ES_AUTOHSCROLL
-    GROUPBOX        "Tags to which lyrics will be saved",IDC_STATIC,7,4,331,61
-    PUSHBUTTON      "?",IDC_SAVE_TAG_EXPLAIN,175,36,16,14
+    EDITTEXT        IDC_SAVE_TAG_UNSYNCED,89,16,216,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_SAVE_TAG_SYNCED,89,36,216,14,ES_AUTOHSCROLL
+    GROUPBOX        "Save tag names (title formatting supported)",IDC_STATIC,7,4,318,61
+    PUSHBUTTON      "?",IDC_SAVE_TAG_EXPLAIN,308,36,12,14
+    CONTROL         "<a>Title formatting syntax help</a>",IDC_SAVE_SYNTAX_HELP,"SysLink",WS_TABSTOP,7,272,110,9
 END
 
 IDD_PREFERENCES_SRC_LOCALFILES DIALOGEX 0, 0, 332, 288
@@ -427,6 +428,8 @@ BEGIN
     LTEXT           "Playback time: 00:00",IDC_LYRIC_EDIT_TIME,15,128,133,8
     GROUPBOX        "Synchronisation",IDC_STATIC,6,3,148,96
     GROUPBOX        "Playback",IDC_STATIC,6,114,148,50
+    PUSHBUTTON      "Format selection...",IDC_LYRIC_EDIT_FORMAT,14,207,130,20
+    LTEXT           "Unicode letters/digits only. Other text is unchanged. Avoid formatting LRC timestamps.",IDC_STATIC,14,233,130,32
 END
 
 IDD_MANUAL_SEARCH DIALOGEX 0, 0, 745, 281

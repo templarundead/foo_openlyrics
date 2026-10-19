@@ -15,6 +15,8 @@
 #include "lyric_source.h"
 #include "mvtf/mvtf.h"
 #include "parsers.h"
+#include "source_io.h"
+#include "source_test_support.h"
 
 static const GUID src_guid = { 0x9b4be445, 0x9a38, 0x4342, { 0xab, 0x72, 0x6f, 0x55, 0x8c, 0x4, 0x4d, 0xc0 } };
 
@@ -153,7 +155,7 @@ std::vector<LyricDataRaw> LrclibLyricsSource::search_for_lyrics(std::string_view
     pfc::string8 content;
     try
     {
-        http_request::ptr request = http_client::get()->create_request("GET");
+        http_request::ptr request = source_io::create_request("GET");
         request->add_header("User-Agent",
                             "foo_openlyrics v" OPENLYRICS_VERSION " (https://github.com/jacquesh/foo_openlyrics)");
         file_ptr response_file = request->run(url.c_str(), abort);
@@ -207,7 +209,7 @@ std::vector<LyricDataRaw> LrclibLyricsSource::get_lyrics(std::string_view artist
     pfc::string8 content;
     try
     {
-        http_request::ptr request = http_client::get()->create_request("GET");
+        http_request::ptr request = source_io::create_request("GET");
         request->add_header("User-Agent",
                             "foo_openlyrics v" OPENLYRICS_VERSION " (https://github.com/jacquesh/foo_openlyrics)");
         file_ptr response_file = request->run(url.c_str(), abort);
@@ -265,7 +267,7 @@ static std::optional<UploadChallenge> get_challenge(abort_callback& abort)
     pfc::string8 content;
     try
     {
-        http_request::ptr request = http_client::get()->create_request("POST");
+        http_request::ptr request = source_io::create_request("POST");
         request->add_header("User-Agent",
                             "foo_openlyrics v" OPENLYRICS_VERSION " (https://github.com/jacquesh/foo_openlyrics)");
         file_ptr response_file = request->run(url.c_str(), abort);
@@ -470,7 +472,7 @@ static void upload_lyrics(LyricData lyrics, const UploadChallenge& challenge, ui
     try
     {
         http_request_post_v2::ptr post;
-        http_client::get()->create_request("POST")->cast(post);
+        source_io::create_request("POST")->cast(post);
         assert(post.is_valid());
 
         post->add_header("User-Agent",
@@ -658,5 +660,80 @@ MVTF_TEST(lrclib_hexdecode_successfully_decodes_strings_with_lower_case_only)
     ASSERT(buffer[29] == 0x65);
     ASSERT(buffer[30] == 0x43);
     ASSERT(buffer[31] == 0x21);
+}
+#endif
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(LrclibLyricsSource, lrclib)
+static const char* lrclib_fixture =
+    R"fixture({"id":42,"trackName":"Song","artistName":"Artist","albumName":"Album","syncedLyrics":"[00:01.00]Line one\n[00:02.00]Line two","plainLyrics":"Line one\nLine two"})fixture";
+
+static void check_lrclib_results(const std::vector<LyricDataRaw>& results, int* mvtf_error_count)
+{
+    ASSERT(results.size() == 2);
+    CHECK(results[0].source_id == src_guid);
+    CHECK(results[0].artist == "Artist");
+    CHECK(results[0].album == "Album");
+    CHECK(results[0].title == "Song");
+    CHECK(results[0].source_path == "https://lrclib.net/api/get/42");
+    CHECK(results[0].type == LyricType::Synced);
+    CHECK(results[1].type == LyricType::Unsynced);
+    CHECK(source_tests::text(results[0]) == "[00:01.00]Line one\n[00:02.00]Line two");
+    CHECK(source_tests::text(results[1]) == "Line one\nLine two");
+}
+
+MVTF_TEST(lrclib_search_parses_synced_and_plain_lyrics)
+{
+    source_io::FixtureIO io;
+    io.responses = { { std::string("[") + lrclib_fixture + "]" } };
+    LyricSourceFactory<LrclibLyricsSource> factory;
+    LyricSourceRemote& source = factory.get_static_instance();
+    abort_callback_dummy abort;
+    check_lrclib_results(source.search(source_tests::params(), abort), mvtf_error_count);
+    ASSERT(io.requests.size() == 1);
+    CHECK(io.requests[0].url.find("/search?") != std::string::npos);
+}
+
+MVTF_TEST(lrclib_exact_get_uses_duration_and_parses_both_formats)
+{
+    source_io::FixtureIO io;
+    io.responses = { { lrclib_fixture } };
+    LyricSourceFactory<LrclibLyricsSource> factory;
+    LyricSourceRemote& source = factory.get_static_instance();
+    abort_callback_dummy abort;
+    auto params = source_tests::params();
+    params.duration_sec = 222;
+    check_lrclib_results(source.search(params, abort), mvtf_error_count);
+    ASSERT(io.requests.size() == 1);
+    CHECK(io.requests[0].url.find("&duration=222") != std::string::npos);
+}
+
+MVTF_TEST(lrclib_search_enforces_result_limit)
+{
+    source_io::FixtureIO io;
+    std::string body = "[";
+    for(int i = 0; i < RESULT_LIMIT + 2; ++i)
+    {
+        if(i != 0) body += ',';
+        body += lrclib_fixture;
+    }
+    body += ']';
+    io.responses = { { body } };
+    LyricSourceFactory<LrclibLyricsSource> factory;
+    LyricSourceRemote& source = factory.get_static_instance();
+    abort_callback_dummy abort;
+    CHECK(source.search(source_tests::params(), abort).size() == RESULT_LIMIT * 2);
+}
+
+MVTF_TEST(lrclib_skips_malformed_tracks_and_empty_lyrics)
+{
+    source_io::FixtureIO io;
+    io.responses = {
+        { R"fixture([null,{}, {"id":1,"trackName":"Song","artistName":"Artist","albumName":"Album","plainLyrics":"","syncedLyrics":null}])fixture" }
+    };
+    LyricSourceFactory<LrclibLyricsSource> factory;
+    LyricSourceRemote& source = factory.get_static_instance();
+    abort_callback_dummy abort;
+    CHECK(source.search(source_tests::params(), abort).empty());
 }
 #endif

@@ -6,6 +6,8 @@
 #include "logging.h"
 #include "lyric_data.h"
 #include "lyric_source.h"
+#include "source_io.h"
+#include "source_test_support.h"
 #include "tag_util.h"
 
 static const GUID src_guid = { 0xadf3a1ba, 0x7e88, 0x4539, { 0xaf, 0x9e, 0xa8, 0xc4, 0xbc, 0x62, 0x98, 0xf1 } };
@@ -76,7 +78,7 @@ std::vector<LyricDataRaw> AZLyricsComSource::search(const LyricSearchParams& par
              firefox_version,
              firefox_version);
 
-    http_request::ptr request = http_client::get()->create_request("GET");
+    http_request::ptr request = source_io::create_request("GET");
     request->add_header("User-Agent", useragent);
 
     std::string url_artist = remove_chars_for_url(params.artist);
@@ -138,7 +140,7 @@ std::vector<LyricDataRaw> AZLyricsComSource::search(const LyricSearchParams& par
 
     if(lyric_text.empty())
     {
-        throw new std::runtime_error("Failed to parse lyrics, the page format may have changed");
+        throw std::runtime_error("Failed to parse lyrics, the page format may have changed");
     }
     else
     {
@@ -162,3 +164,18 @@ bool AZLyricsComSource::lookup(LyricDataRaw& /*data*/, abort_callback& /*abort*/
     assert(false);
     return false;
 }
+
+#if MVTF_TESTS_ENABLED
+SOURCE_FAILURE_TESTS(AZLyricsComSource, azlyricscom)
+MVTF_TEST(azlyricscom_fetches_and_parses_fixture)
+{
+    LyricSourceFactory<AZLyricsComSource> factory;
+    source_tests::search_success(
+        factory.get_static_instance(),
+        R"fixture(<div class="lyricsh"><h2>Song</h2></div><div>Line &amp; one<br>Line two</div>)fixture",
+        "Line & one\r\nLine two",
+        LyricType::Unsynced,
+        "/artist/song.html",
+        mvtf_error_count);
+}
+#endif

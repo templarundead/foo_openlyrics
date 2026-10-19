@@ -66,6 +66,9 @@
     <ClCompile Include="..\src\sources\lyric_source.cpp">
       <Filter>Source Files\sources</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\sources\source_io.cpp">
+      <Filter>Source Files\sources</Filter>
+    </ClCompile>
     <ClCompile Include="..\3rdparty\cJSON\cJSON.c">
       <Filter>3rdparty</Filter>
     </ClCompile>
@@ -214,6 +217,15 @@
     </ClInclude>
     <ClInclude Include="..\src\sources\lyric_source.h">
       <Filter>Header Files\sources</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\sources\source_io.h">
+      <Filter>Header Files\sources</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\sources\source_test_support.h">
+      <Filter>Header Files\sources</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\unicode_text_style.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\3rdparty\cJSON\cJSON.h">
       <Filter>3rdparty</Filter>
