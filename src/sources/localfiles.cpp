@@ -268,8 +268,10 @@ MVTF_TEST(localfiles_search_and_lookup_preserve_lrc_and_text_bytes)
 MVTF_TEST(localfiles_lookup_does_not_truncate_utf16_at_embedded_nulls)
 {
     source_io::FixtureIO io;
-    const char bytes[] = { char(0xFF), char(0xFE), 'A', 0, '\n', 0, 'B', 0 };
-    io.files = { { "fixture/track.txt", std::string(bytes, sizeof(bytes)) } };
+    // Hex escapes preserve the BOM bytes without an out-of-range signed-char cast.
+    const char bytes[] = "\xFF\xFE"
+                         "A\0\n\0B\0";
+    io.files = { { "fixture/track.txt", std::string(bytes, sizeof(bytes) - 1) } };
     LyricSourceFactory<LocalFileSource> factory;
     LyricSourceBase& source = factory.get_static_instance();
     abort_callback_dummy abort;

@@ -16,7 +16,7 @@ $buildExitCode = $LASTEXITCODE
 
 if ($buildExitCode -ne 0) {
     $errors = $buildOutput | ForEach-Object { "$_" } |
-        Where-Object { $_ -match '\b(?:fatal )?error(?: [A-Z]+\d+)?\s*:' } |
+        Where-Object { $_ -match '\b(?:(?:fatal )?error|warning)(?: [A-Z]+\d+)?\s*:' } |
         Select-Object -Unique
     foreach ($message in $errors) {
         $escaped = $message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')

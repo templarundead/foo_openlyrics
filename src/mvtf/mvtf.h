@@ -27,12 +27,19 @@
 #define MVTF_TEST(TEST_NAME) static void TEST_NAME(int* mvtf_error_count)
 #endif
 
+#if MVTF_TESTS_ENABLED
+void mvtf_report_failure(const char* condition, const char* file, int line);
+#else
+inline void mvtf_report_failure(const char*, const char*, int) {}
+#endif
+
 // TODO: Do a debugbreak if the debugger is attached?
 #define ASSERT(CONDITION)                                                                                              \
     do                                                                                                                 \
     {                                                                                                                  \
         if(!(CONDITION))                                                                                               \
         {                                                                                                              \
+            mvtf_report_failure(#CONDITION, __FILE__, __LINE__);                                                       \
             *mvtf_error_count = *mvtf_error_count + 1;                                                                 \
             return;                                                                                                    \
         }                                                                                                              \
@@ -42,6 +49,7 @@
     {                                                                                                                  \
         if(!(CONDITION))                                                                                               \
         {                                                                                                              \
+            mvtf_report_failure(#CONDITION, __FILE__, __LINE__);                                                       \
             *mvtf_error_count = *mvtf_error_count + 1;                                                                 \
         }                                                                                                              \
     } while(false)
@@ -85,6 +93,11 @@ int mvtf_register_function(MVTF_TEST_FUNCTION_TYPE* ptr, const char* name)
 bool mvtf_is_running_tests()
 {
     return mvtf_running_tests;
+}
+
+void mvtf_report_failure(const char* condition, const char* file, int line)
+{
+    printf("Assertion failed at %s:%d: %s\n", file, line, condition);
 }
 
 static int sort_by_name(const void* lhs_void, const void* rhs_void)

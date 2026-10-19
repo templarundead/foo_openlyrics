@@ -54,7 +54,7 @@ jobs:
         run: .github/scripts/build_component.ps1 -Configuration Debug -Platform x86
 
       - name: Run tests
-        run: build\Debug\test_foo_openlyrics.exe build\Debug\foo_openlyrics.dll
+        run: .github/scripts/test_component.ps1 -Platform x86
 
       - name: Build release binaries
         run: .github/scripts/build_component.ps1 -Configuration Release -Platform x86
@@ -78,7 +78,7 @@ jobs:
         run: .github/scripts/build_component.ps1 -Configuration Debug -Platform x64
 
       - name: Run tests
-        run: build\x64\Debug\test_foo_openlyrics.exe build\x64\Debug\foo_openlyrics.dll
+        run: .github/scripts/test_component.ps1 -Platform x64
 
       - name: Build release binaries
         run: .github/scripts/build_component.ps1 -Configuration Release -Platform x64
